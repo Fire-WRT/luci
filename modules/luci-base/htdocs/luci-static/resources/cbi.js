@@ -298,8 +298,6 @@ function cbi_init() {
 		                   node.getAttribute('data-type'));
 	}
 
-	document.querySelectorAll('[data-browser]').forEach(cbi_browser_init);
-
 	document.querySelectorAll('.cbi-tooltip:not(:empty)').forEach(function(s) {
 		s.parentNode.classList.add('cbi-tooltip-container');
 	});
@@ -316,39 +314,20 @@ function cbi_init() {
 		i.addEventListener('mouseout', handler);
 	});
 
+	var tasks = [];
+
 	document.querySelectorAll('[data-ui-widget]').forEach(function(node) {
 		var args = JSON.parse(node.getAttribute('data-ui-widget') || '[]'),
 		    widget = new (Function.prototype.bind.apply(L.ui[args[0]], args)),
 		    markup = widget.render();
 
-		markup.addEventListener('widget-change', cbi_d_update);
-		node.parentNode.replaceChild(markup, node);
+		tasks.push(Promise.resolve(markup).then(function(markup) {
+			markup.addEventListener('widget-change', cbi_d_update);
+			node.parentNode.replaceChild(markup, node);
+		}));
 	});
 
-	cbi_d_update();
-}
-
-function cbi_filebrowser(id, defpath) {
-	var field   = L.dom.elem(id) ? id : document.getElementById(id);
-	var browser = window.open(
-		cbi_strings.path.browser + (field.value || defpath || '') + '?field=' + field.id,
-		"luci_filebrowser", "width=300,height=400,left=100,top=200,scrollbars=yes"
-	);
-
-	browser.focus();
-}
-
-function cbi_browser_init(field)
-{
-	field.parentNode.insertBefore(
-		E('img', {
-			'src': L.resource('cbi/folder.gif'),
-			'class': 'cbi-image-button',
-			'click': function(ev) {
-				cbi_filebrowser(field, field.getAttribute('data-browser'));
-				ev.preventDefault();
-			}
-		}), field.nextSibling);
+	Promise.all(tasks).then(cbi_d_update);
 }
 
 function cbi_validate_form(form, errmsg)
@@ -566,7 +545,7 @@ String.prototype.format = function()
 
 				switch(pType) {
 					case 'b':
-						subst = (~~param || 0).toString(2);
+						subst = Math.floor(+param || 0).toString(2);
 						break;
 
 					case 'c':
@@ -574,11 +553,12 @@ String.prototype.format = function()
 						break;
 
 					case 'd':
-						subst = (~~param || 0);
+						subst = Math.floor(+param || 0).toFixed(0);
 						break;
 
 					case 'u':
-						subst = ~~Math.abs(+param || 0);
+						var n = +param || 0;
+						subst = Math.floor((n < 0) ? 0x100000000 + n : n).toFixed(0);
 						break;
 
 					case 'f':
@@ -588,7 +568,7 @@ String.prototype.format = function()
 						break;
 
 					case 'o':
-						subst = (~~param || 0).toString(8);
+						subst = Math.floor(+param || 0).toString(8);
 						break;
 
 					case 's':
@@ -596,11 +576,11 @@ String.prototype.format = function()
 						break;
 
 					case 'x':
-						subst = ('' + (~~param || 0).toString(16)).toLowerCase();
+						subst = Math.floor(+param || 0).toString(16).toLowerCase();
 						break;
 
 					case 'X':
-						subst = ('' + (~~param || 0).toString(16)).toUpperCase();
+						subst = Math.floor(+param || 0).toString(16).toUpperCase();
 						break;
 
 					case 'h':

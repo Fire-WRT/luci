@@ -1,6 +1,8 @@
 'use strict';
+'require rpc';
 'require uci';
 'require validation';
+'require fs';
 
 var modalDiv = null,
     tooltipDiv = null,
@@ -69,6 +71,11 @@ var UIElement = L.Class.extend({
 	},
 
 	setChangeEvents: function(targetNode /*, ... */) {
+		var tag_changed = L.bind(function(ev) { this.setAttribute('data-changed', true) }, this.node);
+
+		for (var i = 1; i < arguments.length; i++)
+			targetNode.addEventListener(arguments[i], tag_changed);
+
 		this.registerEvents(targetNode, 'widget-change', this.varargs(arguments, 1));
 	}
 });
@@ -146,6 +153,61 @@ var UITextfield = UIElement.extend({
 	}
 });
 
+var UITextarea = UIElement.extend({
+	__init__: function(value, options) {
+		this.value = value;
+		this.options = Object.assign({
+			optional: true,
+			wrap: false,
+			cols: null,
+			rows: null
+		}, options);
+	},
+
+	render: function() {
+		var frameEl = E('div', { 'id': this.options.id }),
+		    value = (this.value != null) ? String(this.value) : '';
+
+		frameEl.appendChild(E('textarea', {
+			'id': this.options.id ? 'widget.' + this.options.id : null,
+			'name': this.options.name,
+			'class': 'cbi-input-textarea',
+			'readonly': this.options.readonly ? '' : null,
+			'placeholder': this.options.placeholder,
+			'style': !this.options.cols ? 'width:100%' : null,
+			'cols': this.options.cols,
+			'rows': this.options.rows,
+			'wrap': this.options.wrap ? '' : null
+		}, [ value ]));
+
+		if (this.options.monospace)
+			frameEl.firstElementChild.style.fontFamily = 'monospace';
+
+		return this.bind(frameEl);
+	},
+
+	bind: function(frameEl) {
+		var inputEl = frameEl.firstElementChild;
+
+		this.node = frameEl;
+
+		this.setUpdateEvents(inputEl, 'keyup', 'blur');
+		this.setChangeEvents(inputEl, 'change');
+
+		L.dom.bindClassInstance(frameEl, this);
+
+		return frameEl;
+	},
+
+	getValue: function() {
+		return this.node.firstElementChild.value;
+	},
+
+	setValue: function(value) {
+		this.node.firstElementChild.value = value;
+	}
+});
+
 var UICheckbox = UIElement.extend({
 	__init__: function(value, options) {
 		this.value = value;
@@ -207,7 +269,7 @@ var UICheckbox = UIElement.extend({
 
 var UISelect = UIElement.extend({
 	__init__: function(value, choices, options) {
-		if (typeof(choices) != 'object')
+		if (!L.isObject(choices))
 			choices = {};
 
 		if (!Array.isArray(value))
@@ -1199,7 +1261,7 @@ var UIDynamicList = UIElement.extend({
 					'name': this.options.name,
 					'value': value })]);
 
-		dl.querySelectorAll('.item, .add-item').forEach(function(item) {
+		dl.querySelectorAll('.item').forEach(function(item) {
 			if (exists)
 				return;
 
@@ -1210,9 +1272,12 @@ var UIDynamicList = UIElement.extend({
 
 			if (hidden && hidden.value === value)
 				exists = true;
-			else if (!hidden || hidden.value >= value)
-				exists = !!item.parentNode.insertBefore(new_item, item);
 		});
+
+		if (!exists) {
+			var ai = dl.querySelector('.add-item');
+			ai.parentNode.insertBefore(new_item, ai);
+		}
 
 		dl.dispatchEvent(new CustomEvent('cbi-dynlist-change', {
 			bubbles: true,
@@ -1395,6 +1460,393 @@ var UIHiddenfield = UIElement.extend({
 	}
 });
 
+var UIFileUpload = UIElement.extend({
+	__init__: function(value, options) {
+		this.value = value;
+		this.options = Object.assign({
+			show_hidden: false,
+			enable_upload: true,
+			enable_remove: true,
+			root_directory: '/etc/luci-uploads'
+		}, options);
+	},
+
+	bind: function(browserEl) {
+		this.node = browserEl;
+
+		this.setUpdateEvents(browserEl, 'cbi-fileupload-select', 'cbi-fileupload-cancel');
+		this.setChangeEvents(browserEl, 'cbi-fileupload-select', 'cbi-fileupload-cancel');
+
+		L.dom.bindClassInstance(browserEl, this);
+
+		return browserEl;
+	},
+
+	render: function() {
+		return L.resolveDefault(this.value != null ? fs.stat(this.value) : null).then(L.bind(function(stat) {
+			var label;
+
+			if (L.isObject(stat) && stat.type != 'directory')
+				this.stat = stat;
+
+			if (this.stat != null)
+				label = [ this.iconForType(this.stat.type), ' %s (%1000mB)'.format(this.truncatePath(this.stat.path), this.stat.size) ];
+			else if (this.value != null)
+				label = [ this.iconForType('file'), ' %s (%s)'.format(this.truncatePath(this.value), _('File not accessible')) ];
+			else
+				label = [ _('Select file…') ];
+
+			return this.bind(E('div', { 'id': this.options.id }, [
+				E('button', {
+					'class': 'btn',
+					'click': L.ui.createHandlerFn(this, 'handleFileBrowser')
+				}, label),
+				E('div', {
+					'class': 'cbi-filebrowser'
+				}),
+				E('input', {
+					'type': 'hidden',
+					'name': this.options.name,
+					'value': this.value
+				})
+			]));
+		}, this));
+	},
+
+	truncatePath: function(path) {
+		if (path.length > 50)
+			path = path.substring(0, 25) + '…' + path.substring(path.length - 25);
+
+		return path;
+	},
+
+	iconForType: function(type) {
+		switch (type) {
+		case 'symlink':
+			return E('img', {
+				'src': L.resource('cbi/link.gif'),
+				'title': _('Symbolic link'),
+				'class': 'middle'
+			});
+
+		case 'directory':
+			return E('img', {
+				'src': L.resource('cbi/folder.gif'),
+				'title': _('Directory'),
+				'class': 'middle'
+			});
+
+		default:
+			return E('img', {
+				'src': L.resource('cbi/file.gif'),
+				'title': _('File'),
+				'class': 'middle'
+			});
+		}
+	},
+
+	canonicalizePath: function(path) {
+		return path.replace(/\/{2,}/, '/')
+			.replace(/\/\.(\/|$)/g, '/')
+			.replace(/[^\/]+\/\.\.(\/|$)/g, '/')
+			.replace(/\/$/, '');
+	},
+
+	splitPath: function(path) {
+		var croot = this.canonicalizePath(this.options.root_directory || '/'),
+		    cpath = this.canonicalizePath(path || '/');
+
+		if (cpath.length <= croot.length)
+			return [ croot ];
+
+		if (cpath.charAt(croot.length) != '/')
+			return [ croot ];
+
+		var parts = cpath.substring(croot.length + 1).split(/\//);
+
+		parts.unshift(croot);
+
+		return parts;
+	},
+
+	handleUpload: function(path, list, ev) {
+		var form = ev.target.parentNode,
+		    fileinput = form.querySelector('input[type="file"]'),
+		    nameinput = form.querySelector('input[type="text"]'),
+		    filename = (nameinput.value != null ? nameinput.value : '').trim();
+
+		ev.preventDefault();
+
+		if (filename == '' || filename.match(/\//) || fileinput.files[0] == null)
+			return;
+
+		var existing = list.filter(function(e) { return e.name == filename })[0];
+
+		if (existing != null && existing.type == 'directory')
+			return alert(_('A directory with the same name already exists.'));
+		else if (existing != null && !confirm(_('Overwrite existing file "%s" ?').format(filename)))
+			return;
+
+		var data = new FormData();
+
+		data.append('sessionid', L.env.sessionid);
+		data.append('filename', path + '/' + filename);
+		data.append('filedata', fileinput.files[0]);
+
+		return L.Request.post('/cgi-bin/cgi-upload', data, {
+			progress: L.bind(function(btn, ev) {
+				btn.firstChild.data = '%.2f%%'.format((ev.loaded / ev.total) * 100);
+			}, this, ev.target)
+		}).then(L.bind(function(path, ev, res) {
+			var reply = res.json();
+
+			if (L.isObject(reply) && reply.failure)
+				alert(_('Upload request failed: %s').format(reply.message));
+
+			return this.handleSelect(path, null, ev);
+		}, this, path, ev));
+	},
+
+	handleDelete: function(path, fileStat, ev) {
+		var parent = path.replace(/\/[^\/]+$/, '') || '/',
+		    name = path.replace(/^.+\//, ''),
+		    msg;
+
+		ev.preventDefault();
+
+		if (fileStat.type == 'directory')
+			msg = _('Do you really want to recursively delete the directory "%s" ?').format(name);
+		else
+			msg = _('Do you really want to delete "%s" ?').format(name);
+
+		if (confirm(msg)) {
+			var button = this.node.firstElementChild,
+			    hidden = this.node.lastElementChild;
+
+			if (path == hidden.value) {
+				L.dom.content(button, _('Select file…'));
+				hidden.value = '';
+			}
+
+			return fs.remove(path).then(L.bind(function(parent, ev) {
+				return this.handleSelect(parent, null, ev);
+			}, this, parent, ev)).catch(function(err) {
+				alert(_('Delete request failed: %s').format(err.message));
+			});
+		}
+	},
+
+	renderUpload: function(path, list) {
+		if (!this.options.enable_upload)
+			return E([]);
+
+		return E([
+			E('a', {
+				'href': '#',
+				'class': 'btn cbi-button-positive',
+				'click': function(ev) {
+					var uploadForm = ev.target.nextElementSibling,
+					    fileInput = uploadForm.querySelector('input[type="file"]');
+
+					ev.target.style.display = 'none';
+					uploadForm.style.display = '';
+					fileInput.click();
+				}
+			}, _('Upload file…')),
+			E('div', { 'class': 'upload', 'style': 'display:none' }, [
+				E('input', {
+					'type': 'file',
+					'style': 'display:none',
+					'change': function(ev) {
+						var nameinput = ev.target.parentNode.querySelector('input[type="text"]'),
+						    uploadbtn = ev.target.parentNode.querySelector('button.cbi-button-save');
+
+						nameinput.value = ev.target.value.replace(/^.+[\/\\]/, '');
+						uploadbtn.disabled = false;
+					}
+				}),
+				E('button', {
+					'class': 'btn',
+					'click': function(ev) {
+						ev.preventDefault();
+						ev.target.previousElementSibling.click();
+					}
+				}, [ _('Browse…') ]),
+				E('div', {}, E('input', { 'type': 'text', 'placeholder': _('Filename') })),
+				E('button', {
+					'class': 'btn cbi-button-save',
+					'click': L.ui.createHandlerFn(this, 'handleUpload', path, list),
+					'disabled': true
+				}, [ _('Upload file') ])
+			])
+		]);
+	},
+
+	renderListing: function(container, path, list) {
+		var breadcrumb = E('p'),
+		    rows = E('ul');
+
+		list.sort(function(a, b) {
+			var isDirA = (a.type == 'directory'),
+			    isDirB = (b.type == 'directory');
+
+			if (isDirA != isDirB)
+				return isDirA < isDirB;
+
+			return a.name > b.name;
+		});
+
+		for (var i = 0; i < list.length; i++) {
+			if (!this.options.show_hidden && list[i].name.charAt(0) == '.')
+				continue;
+
+			var entrypath = this.canonicalizePath(path + '/' + list[i].name),
+			    selected = (entrypath == this.node.lastElementChild.value),
+			    mtime = new Date(list[i].mtime * 1000);
+
+			rows.appendChild(E('li', [
+				E('div', { 'class': 'name' }, [
+					this.iconForType(list[i].type),
+					' ',
+					E('a', {
+						'href': '#',
+						'style': selected ? 'font-weight:bold' : null,
+						'click': L.ui.createHandlerFn(this, 'handleSelect',
+							entrypath, list[i].type != 'directory' ? list[i] : null)
+					}, '%h'.format(list[i].name))
+				]),
+				E('div', { 'class': 'mtime hide-xs' }, [
+					' %04d-%02d-%02d %02d:%02d:%02d '.format(
+						mtime.getFullYear(),
+						mtime.getMonth() + 1,
+						mtime.getDate(),
+						mtime.getHours(),
+						mtime.getMinutes(),
+						mtime.getSeconds())
+				]),
+				E('div', [
+					selected ? E('button', {
+						'class': 'btn',
+						'click': L.ui.createHandlerFn(this, 'handleReset')
+					}, [ _('Deselect') ]) : '',
+					this.options.enable_remove ? E('button', {
+						'class': 'btn cbi-button-negative',
+						'click': L.ui.createHandlerFn(this, 'handleDelete', entrypath, list[i])
+					}, [ _('Delete') ]) : ''
+				])
+			]));
+		}
+
+		if (!rows.firstElementChild)
+			rows.appendChild(E('em', _('No entries in this directory')));
+
+		var dirs = this.splitPath(path),
+		    cur = '';
+
+		for (var i = 0; i < dirs.length; i++) {
+			cur = cur ? cur + '/' + dirs[i] : dirs[i];
+			L.dom.append(breadcrumb, [
+				i ? ' » ' : '',
+				E('a', {
+					'href': '#',
+					'click': L.ui.createHandlerFn(this, 'handleSelect', cur || '/', null)
+				}, dirs[i] != '' ? '%h'.format(dirs[i]) : E('em', '(root)')),
+			]);
+		}
+
+		L.dom.content(container, [
+			breadcrumb,
+			rows,
+			E('div', { 'class': 'right' }, [
+				this.renderUpload(path, list),
+				E('a', {
+					'href': '#',
+					'class': 'btn',
+					'click': L.ui.createHandlerFn(this, 'handleCancel')
+				}, _('Cancel'))
+			]),
+		]);
+	},
+
+	handleCancel: function(ev) {
+		var button = this.node.firstElementChild,
+		    browser = button.nextElementSibling;
+
+		browser.classList.remove('open');
+		button.style.display = '';
+
+		this.node.dispatchEvent(new CustomEvent('cbi-fileupload-cancel', {}));
+	},
+
+	handleReset: function(ev) {
+		var button = this.node.firstElementChild,
+		    hidden = this.node.lastElementChild;
+
+		hidden.value = '';
+		L.dom.content(button, _('Select file…'));
+
+		this.handleCancel(ev);
+	},
+
+	handleSelect: function(path, fileStat, ev) {
+		var browser = L.dom.parent(ev.target, '.cbi-filebrowser'),
+		    ul = browser.querySelector('ul');
+
+		if (fileStat == null) {
+			L.dom.content(ul, E('em', { 'class': 'spinning' }, _('Loading directory contents…')));
+			L.resolveDefault(fs.list(path), []).then(L.bind(this.renderListing, this, browser, path));
+		}
+		else {
+			var button = this.node.firstElementChild,
+			    hidden = this.node.lastElementChild;
+
+			path = this.canonicalizePath(path);
+
+			L.dom.content(button, [
+				this.iconForType(fileStat.type),
+				' %s (%1000mB)'.format(this.truncatePath(path), fileStat.size)
+			]);
+
+			browser.classList.remove('open');
+			button.style.display = '';
+			hidden.value = path;
+
+			this.stat = Object.assign({ path: path }, fileStat);
+			this.node.dispatchEvent(new CustomEvent('cbi-fileupload-select', { detail: this.stat }));
+		}
+	},
+
+	handleFileBrowser: function(ev) {
+		var button = ev.target,
+		    browser = button.nextElementSibling,
+		    path = this.stat ? this.stat.path.replace(/\/[^\/]+$/, '') : this.options.root_directory;
+
+		if (this.options.root_directory.indexOf(path) != 0)
+			path = this.options.root_directory;
+
+		ev.preventDefault();
+
+		return L.resolveDefault(fs.list(path), []).then(L.bind(function(button, browser, path, list) {
+			document.querySelectorAll('.cbi-filebrowser.open').forEach(function(browserEl) {
+				L.dom.findClassInstance(browserEl).handleCancel(ev);
+			});
+
+			button.style.display = 'none';
+			browser.classList.add('open');
+
+			return this.renderListing(browser, path, list);
+		}, this, button, browser, path));
+	},
+
+	getValue: function() {
+		return this.node.lastElementChild.value;
+	},
+
+	setValue: function(value) {
+		this.node.lastElementChild.value = value;
+	}
+});
+
 
 return L.Class.extend({
 	__init__: function() {
@@ -1497,6 +1949,43 @@ return L.Class.extend({
 		tooltipDiv.dispatchEvent(new CustomEvent('tooltip-close', { bubbles: true }));
 	},
 
+	addNotification: function(title, children /*, ... */) {
+		var mc = document.querySelector('#maincontent') || document.body;
+		var msg = E('div', {
+			'class': 'alert-message fade-in',
+			'style': 'display:flex',
+			'transitionend': function(ev) {
+				var node = ev.currentTarget;
+				if (node.parentNode && node.classList.contains('fade-out'))
+					node.parentNode.removeChild(node);
+			}
+		}, [
+			E('div', { 'style': 'flex:10' }),
+			E('div', { 'style': 'flex:1 1 auto; display:flex' }, [
+				E('button', {
+					'class': 'btn',
+					'style': 'margin-left:auto; margin-top:auto',
+					'click': function(ev) {
+						L.dom.parent(ev.target, '.alert-message').classList.add('fade-out');
+					},
+
+				}, [ _('Dismiss') ])
+			])
+		]);
+
+		if (title != null)
+			L.dom.append(msg.firstElementChild, E('h4', {}, title));
+
+		L.dom.append(msg.firstElementChild, children);
+
+		for (var i = 2; i < arguments.length; i++)
+			msg.classList.add(arguments[i]);
+
+		mc.insertBefore(msg, mc.firstElementChild);
+
+		return msg;
+	},
+
 	/* Widget helper */
 	itemlist: function(node, items, separators) {
 		var children = [];
@@ -1553,9 +2042,6 @@ return L.Class.extend({
 			document.addEventListener('dependency-update', this.updateTabs.bind(this));
 
 			this.updateTabs();
-
-			if (!groups.length)
-				this.setActiveTabId(-1, -1);
 		},
 
 		initTabGroup: function(panes) {
@@ -1573,6 +2059,7 @@ return L.Class.extend({
 				    active = pane.getAttribute('data-tab-active') === 'true';
 
 				menu.appendChild(E('li', {
+					'style': this.isEmptyPane(pane) ? 'display:none' : null,
 					'class': active ? 'cbi-tab' : 'cbi-tab-disabled',
 					'data-tab': name
 				}, E('a', {
@@ -1587,11 +2074,11 @@ return L.Class.extend({
 			group.parentNode.insertBefore(menu, group);
 
 			if (selected === null) {
-				selected = this.getActiveTabId(groupId);
+				selected = this.getActiveTabId(panes[0]);
 
-				if (selected < 0 || selected >= panes.length || L.dom.isEmpty(panes[selected])) {
+				if (selected < 0 || selected >= panes.length || this.isEmptyPane(panes[selected])) {
 					for (var i = 0; i < panes.length; i++) {
-						if (!L.dom.isEmpty(panes[i])) {
+						if (!this.isEmptyPane(panes[i])) {
 							selected = i;
 							break;
 						}
@@ -1602,8 +2089,30 @@ return L.Class.extend({
 				menu.childNodes[selected].classList.remove('cbi-tab-disabled');
 				panes[selected].setAttribute('data-tab-active', 'true');
 
-				this.setActiveTabId(groupId, selected);
+				this.setActiveTabId(panes[selected], selected);
 			}
+
+			this.updateTabs(group);
+		},
+
+		isEmptyPane: function(pane) {
+			return L.dom.isEmpty(pane, function(n) { return n.classList.contains('cbi-tab-descr') });
+		},
+
+		getPathForPane: function(pane) {
+			var path = [], node = null;
+
+			for (node = pane ? pane.parentNode : null;
+			     node != null && node.hasAttribute != null;
+			     node = node.parentNode)
+			{
+				if (node.hasAttribute('data-tab'))
+					path.unshift(node.getAttribute('data-tab'));
+				else if (node.hasAttribute('data-section-id'))
+					path.unshift(node.getAttribute('data-section-id'));
+			}
+
+			return path.join('/');
 		},
 
 		getActiveTabState: function() {
@@ -1611,23 +2120,26 @@ return L.Class.extend({
 
 			try {
 				var val = JSON.parse(window.sessionStorage.getItem('tab'));
-				if (val.page === page && Array.isArray(val.groups))
+				if (val.page === page && L.isObject(val.paths))
 					return val;
 			}
 			catch(e) {}
 
 			window.sessionStorage.removeItem('tab');
-			return { page: page, groups: [] };
+			return { page: page, paths: {} };
 		},
 
-		getActiveTabId: function(groupId) {
-			return +this.getActiveTabState().groups[groupId] || 0;
+		getActiveTabId: function(pane) {
+			var path = this.getPathForPane(pane);
+			return +this.getActiveTabState().paths[path] || 0;
 		},
 
-		setActiveTabId: function(groupId, tabIndex) {
+		setActiveTabId: function(pane, tabIndex) {
+			var path = this.getPathForPane(pane);
+
 			try {
 				var state = this.getActiveTabState();
-				    state.groups[groupId] = tabIndex;
+				    state.paths[path] = tabIndex;
 
 			    window.sessionStorage.setItem('tab', JSON.stringify(state));
 			}
@@ -1637,12 +2149,15 @@ return L.Class.extend({
 		},
 
 		updateTabs: function(ev, root) {
-			(root || document).querySelectorAll('[data-tab-title]').forEach(function(pane) {
+			(root || document).querySelectorAll('[data-tab-title]').forEach(L.bind(function(pane) {
 				var menu = pane.parentNode.previousElementSibling,
-				    tab = menu.querySelector('[data-tab="%s"]'.format(pane.getAttribute('data-tab'))),
+				    tab = menu ? menu.querySelector('[data-tab="%s"]'.format(pane.getAttribute('data-tab'))) : null,
 				    n_errors = pane.querySelectorAll('.cbi-input-invalid').length;
 
-				if (L.dom.isEmpty(pane)) {
+				if (!menu || !tab)
+					return;
+
+				if (this.isEmptyPane(pane)) {
 					tab.style.display = 'none';
 					tab.classList.remove('flash');
 				}
@@ -1660,7 +2175,7 @@ return L.Class.extend({
 					tab.removeAttribute('data-errors');
 					tab.removeAttribute('data-tooltip');
 				}
-			});
+			}, this));
 		},
 
 		switchTab: function(ev) {
@@ -1687,7 +2202,7 @@ return L.Class.extend({
 				if (L.dom.matches(pane, '[data-tab]')) {
 					if (pane.getAttribute('data-tab') === name) {
 						pane.setAttribute('data-tab-active', 'true');
-						L.ui.tabs.setActiveTabId(groupId, index);
+						L.ui.tabs.setActiveTabId(pane, index);
 					}
 					else {
 						pane.setAttribute('data-tab-active', 'false');
@@ -1698,6 +2213,44 @@ return L.Class.extend({
 			});
 		}
 	}),
+
+	/* Reconnect handling */
+	pingDevice: function(proto, ipaddr) {
+		var target = '%s://%s%s?%s'.format(proto || 'http', ipaddr || window.location.host, L.resource('icons/loading.gif'), Math.random());
+
+		return new Promise(function(resolveFn, rejectFn) {
+			var img = new Image();
+
+			img.onload = resolveFn;
+			img.onerror = rejectFn;
+
+			window.setTimeout(rejectFn, 1000);
+
+			img.src = target;
+		});
+	},
+
+	awaitReconnect: function(/* ... */) {
+		var ipaddrs = arguments.length ? arguments : [ window.location.host ];
+
+		window.setTimeout(L.bind(function() {
+			L.Poll.add(L.bind(function() {
+				var tasks = [], reachable = false;
+
+				for (var i = 0; i < 2; i++)
+					for (var j = 0; j < ipaddrs.length; j++)
+						tasks.push(this.pingDevice(i ? 'https' : 'http', ipaddrs[j])
+							.then(function(ev) { reachable = ev.target.src.replace(/^(https?:\/\/[^\/]+).*$/, '$1/') }, function() {}));
+
+				return Promise.all(tasks).then(function() {
+					if (reachable) {
+						L.Poll.stop();
+						window.location = reachable;
+					}
+				});
+			}, this));
+		}, this), 5000);
+	},
 
 	/* UCI Changes */
 	changes: L.Class.singleton({
@@ -1770,24 +2323,18 @@ return L.Class.extend({
 							E('var', {}, E('del', '&#160;')), ' ', _('Option removed') ])]),
 					E('br'), list,
 					E('div', { 'class': 'right' }, [
-						E('input', {
-							'type': 'button',
+						E('button', {
 							'class': 'btn',
-							'click': L.ui.hideModal,
-							'value': _('Dismiss')
-						}), ' ',
-						E('input', {
-							'type': 'button',
+							'click': L.ui.hideModal
+						}, [ _('Dismiss') ]), ' ',
+						E('button', {
 							'class': 'cbi-button cbi-button-positive important',
-							'click': L.bind(this.apply, this, true),
-							'value': _('Save & Apply')
-						}), ' ',
-						E('input', {
-							'type': 'button',
+							'click': L.bind(this.apply, this, true)
+						}, [ _('Save & Apply') ]), ' ',
+						E('button', {
 							'class': 'cbi-button cbi-button-reset',
-							'click': L.bind(this.revert, this),
-							'value': _('Revert')
-						})])])
+							'click': L.bind(this.revert, this)
+						}, [ _('Revert') ])])])
 			]);
 
 			for (var config in this.changes) {
@@ -1863,24 +2410,18 @@ return L.Class.extend({
 							E('h4', _('Configuration has been rolled back!')),
 							E('p', _('The device could not be reached within %d seconds after applying the pending changes, which caused the configuration to be rolled back for safety reasons. If you believe that the configuration changes are correct nonetheless, perform an unchecked configuration apply. Alternatively, you can dismiss this warning and edit changes before attempting to apply again, or revert all pending changes to keep the currently working configuration state.').format(L.env.apply_rollback)),
 							E('div', { 'class': 'right' }, [
-								E('input', {
-									'type': 'button',
+								E('button', {
 									'class': 'btn',
-									'click': L.bind(L.ui.changes.displayStatus, L.ui.changes, false),
-									'value': _('Dismiss')
-								}), ' ',
-								E('input', {
-									'type': 'button',
+									'click': L.bind(L.ui.changes.displayStatus, L.ui.changes, false)
+								}, [ _('Dismiss') ]), ' ',
+								E('button', {
 									'class': 'btn cbi-button-action important',
-									'click': L.bind(L.ui.changes.revert, L.ui.changes),
-									'value': _('Revert changes')
-								}), ' ',
-								E('input', {
-									'type': 'button',
+									'click': L.bind(L.ui.changes.revert, L.ui.changes)
+								}, [ _('Revert changes') ]), ' ',
+								E('button', {
 									'class': 'btn cbi-button-negative important',
-									'click': L.bind(L.ui.changes.apply, L.ui.changes, false),
-									'value': _('Apply unchecked')
-								})
+									'click': L.bind(L.ui.changes.apply, L.ui.changes, false)
+								}, [ _('Apply unchecked') ])
 							])
 						]);
 
@@ -2058,12 +2599,37 @@ return L.Class.extend({
 		catch (e) { }
 	},
 
+	createHandlerFn: function(ctx, fn /*, ... */) {
+		if (typeof(fn) == 'string')
+			fn = ctx[fn];
+
+		if (typeof(fn) != 'function')
+			return null;
+
+		return Function.prototype.bind.apply(function() {
+			var t = arguments[arguments.length - 1].target;
+
+			t.classList.add('spinning');
+			t.disabled = true;
+
+			if (t.blur)
+				t.blur();
+
+			Promise.resolve(fn.apply(ctx, arguments)).finally(function() {
+				t.classList.remove('spinning');
+				t.disabled = false;
+			});
+		}, this.varargs(arguments, 2, ctx));
+	},
+
 	/* Widgets */
 	Textfield: UITextfield,
+	Textarea: UITextarea,
 	Checkbox: UICheckbox,
 	Select: UISelect,
 	Dropdown: UIDropdown,
 	DynamicList: UIDynamicList,
 	Combobox: UICombobox,
-	Hiddenfield: UIHiddenfield
+	Hiddenfield: UIHiddenfield,
+	FileUpload: UIFileUpload
 });

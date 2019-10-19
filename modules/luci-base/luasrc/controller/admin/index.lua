@@ -96,6 +96,7 @@ function index()
 	page.leaf = true
 
 	page = entry({"admin", "ubus"}, call("action_ubus"), nil)
+	page.sysauth = false
 	page.leaf = true
 
 	-- Logout is last
@@ -146,6 +147,8 @@ local function ubus_reply(id, data, code, errmsg)
 			code = code,
 			message = errmsg
 		}
+	elseif type(code) == "table" then
+		reply.result = code
 	else
 		reply.result = { code, data }
 	end
@@ -165,20 +168,38 @@ local ubus_types = {
 	"double"
 }
 
+local function ubus_access(sid, obj, fun)
+	local res, code = luci.util.ubus("session", "access", {
+		ubus_rpc_session = sid,
+		scope            = "ubus",
+		object           = obj,
+		["function"]     = fun
+	})
+
+	return (type(res) == "table" and res.access == true)
+end
+
 local function ubus_request(req)
-	if type(req) ~= "table" or type(req.method) ~= "string" or type(req.params) ~= "table" or
-	   #req.params < 2 or req.jsonrpc ~= "2.0" or req.id == nil then
+	if type(req) ~= "table" or type(req.method) ~= "string" or req.jsonrpc ~= "2.0" or req.id == nil then
 		return ubus_reply(nil, nil, -32600, "Invalid request")
 
 	elseif req.method == "call" then
+		if type(req.params) ~= "table" or #req.params < 3 then
+			return ubus_reply(nil, nil, -32600, "Invalid parameters")
+		end
+
 		local sid, obj, fun, arg =
 			req.params[1], req.params[2], req.params[3], req.params[4] or {}
 		if type(arg) ~= "table" or arg.ubus_rpc_session ~= nil then
 			return ubus_reply(req.id, nil, -32602, "Invalid parameters")
 		end
 
-		if sid == "00000000000000000000000000000000" then
+		if sid == "00000000000000000000000000000000" and luci.dispatcher.context.authsession then
 			sid = luci.dispatcher.context.authsession
+		end
+
+		if not ubus_access(sid, obj, fun) then
+			return ubus_reply(req.id, nil, -32002, "Access denied")
 		end
 
 		arg.ubus_rpc_session = sid
@@ -187,34 +208,38 @@ local function ubus_request(req)
 		return ubus_reply(req.id, res, code or 0)
 
 	elseif req.method == "list" then
-		if type(params) ~= "table" or #params == 0 then
-			local objs = { luci.util.ubus() }
-			return ubus_reply(req.id, objs, 0)
-		else
+		if req.params == nil or (type(req.params) == "table" and #req.params == 0) then
+			local objs = luci.util.ubus()
+			return ubus_reply(req.id, nil, objs)
+
+		elseif type(req.params) == "table" then
 			local n, rv = nil, {}
-			for n = 1, #params do
-				if type(params[n]) ~= "string" then
+			for n = 1, #req.params do
+				if type(req.params[n]) ~= "string" then
 					return ubus_reply(req.id, nil, -32602, "Invalid parameters")
 				end
 
-				local sig = luci.util.ubus(params[n])
+				local sig = luci.util.ubus(req.params[n])
 				if sig and type(sig) == "table" then
-					rv[params[n]] = {}
+					rv[req.params[n]] = {}
 
 					local m, p
 					for m, p in pairs(sig) do
 						if type(p) == "table" then
-							rv[params[n]][m] = {}
+							rv[req.params[n]][m] = {}
 
 							local pn, pt
 							for pn, pt in pairs(p) do
-								rv[params[n]][m][pn] = ubus_types[pt] or "unknown"
+								rv[req.params[n]][m][pn] = ubus_types[pt] or "unknown"
 							end
 						end
 					end
 				end
 			end
-			return ubus_reply(req.id, rv, 0)
+			return ubus_reply(req.id, nil, rv)
+
+		else
+			return ubus_reply(req.id, nil, -32602, "Invalid parameters")
 		end
 	end
 

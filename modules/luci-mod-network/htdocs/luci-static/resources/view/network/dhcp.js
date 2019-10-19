@@ -7,17 +7,19 @@ var callHostHints, callDUIDHints, callDHCPLeases, CBILeaseStatus;
 
 callHostHints = rpc.declare({
 	object: 'luci',
-	method: 'host_hints'
+	method: 'getHostHints',
+	expect: { '': {} }
 });
 
 callDUIDHints = rpc.declare({
 	object: 'luci',
-	method: 'duid_hints'
+	method: 'getDUIDHints',
+	expect: { '': {} }
 });
 
 callDHCPLeases = rpc.declare({
 	object: 'luci',
-	method: 'leases',
+	method: 'getDHCPLeases',
 	params: [ 'family' ],
 	expect: { dhcp_leases: [] }
 });
@@ -57,7 +59,6 @@ return L.view.extend({
 		    m, s, o, ss, so;
 
 		m = new form.Map('dhcp', _('DHCP and DNS'), _('Dnsmasq is a combined <abbr title="Dynamic Host Configuration Protocol">DHCP</abbr>-Server and <abbr title="Domain Name System">DNS</abbr>-Forwarder for <abbr title="Network Address Translation">NAT</abbr> firewalls'));
-		m.tabbed = true;
 
 		s = m.section(form.TypedSection, 'dnsmasq', _('Server Settings'));
 		s.anonymous = true;
@@ -344,8 +345,29 @@ return L.view.extend({
 
 			return result.length ? result.join(' ') : null;
 		};
+		so.renderWidget = function(section_id, option_index, cfgvalue) {
+			var node = form.Value.prototype.renderWidget.apply(this, [section_id, option_index, cfgvalue]),
+			    ipopt = this.section.children.filter(function(o) { return o.option == 'ip' })[0];
+
+			node.addEventListener('cbi-dropdown-change', L.bind(function(ipopt, section_id, ev) {
+				var mac = ev.detail.value.value;
+				if (mac == null || mac == '' || !hosts[mac] || !hosts[mac].ipv4)
+					return;
+
+				var ip = ipopt.formvalue(section_id);
+				if (ip != null && ip != '')
+					return;
+
+				var node = ipopt.map.findElement('id', ipopt.cbid(section_id));
+				if (node)
+					L.dom.callClassMethod(node, 'setValue', hosts[mac].ipv4);
+			}, this, ipopt, section_id));
+
+			return node;
+		};
 		Object.keys(hosts).forEach(function(mac) {
-			so.value(mac);
+			var hint = hosts[mac].name || hosts[mac].ipv4;
+			so.value(mac, hint ? '%s (%s)'.format(mac, hint) : mac);
 		});
 
 		so = ss.option(form.Value, 'ip', _('<abbr title="Internet Protocol Version 4">IPv4</abbr>-Address'));
@@ -362,8 +384,10 @@ return L.view.extend({
 			return true;
 		};
 		Object.keys(hosts).forEach(function(mac) {
-			if (hosts[mac].ipv4)
-				so.value(hosts[mac].ipv4);
+			if (hosts[mac].ipv4) {
+				var hint = hosts[mac].name;
+				so.value(hosts[mac].ipv4, hint ? '%s (%s)'.format(hosts[mac].ipv4, hint) : hosts[mac].ipv4);
+			}
 		});
 
 		so = ss.option(form.Value, 'leasetime', _('Lease time'));

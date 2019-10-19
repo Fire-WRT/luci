@@ -2,53 +2,35 @@
 'require uci';
 'require rpc';
 'require form';
+'require tools.widgets as widgets';
 
-var callInitAction, callLeds, callUSB, callNetdevs;
-
-callInitAction = rpc.declare({
-	object: 'luci',
-	method: 'initCall',
-	params: [ 'name', 'action' ],
-	expect: { result: false }
-});
+var callLeds, callUSB;
 
 callLeds = rpc.declare({
 	object: 'luci',
-	method: 'leds'
+	method: 'getLEDs',
+	expect: { '': {} }
 });
 
 callUSB = rpc.declare({
 	object: 'luci',
-	method: 'usb'
-});
-
-callNetdevs = rpc.declare({
-	object: 'luci',
-	method: 'ifaddrs',
-	expect: { result: [] },
-	filter: function(res) {
-		var devs = {};
-		for (var i = 0; i < res.length; i++)
-			devs[res[i].name] = true;
-		return Object.keys(devs).sort();
-	}
+	method: 'getUSBDevices',
+	expect: { '': {} }
 });
 
 return L.view.extend({
 	load: function() {
 		return Promise.all([
 			callLeds(),
-			callUSB(),
-			callNetdevs()
+			callUSB()
 		]);
 	},
 
 	render: function(results) {
 		var leds = results[0],
 		    usb = results[1],
-		    netdevs = results[2],
 		    triggers = {},
-		    trigger, m, s, o;
+		    m, s, o;
 
 		for (var k in leds)
 			for (var i = 0; i < leds[k].triggers.length; i++)
@@ -58,9 +40,11 @@ return L.view.extend({
 			_('<abbr title="Light Emitting Diode">LED</abbr> Configuration'),
 			_('Customizes the behaviour of the device <abbr title="Light Emitting Diode">LED</abbr>s if possible.'));
 
-		s = m.section(form.TypedSection, 'led', '');
+		s = m.section(form.GridSection, 'led', '');
 		s.anonymous = true;
 		s.addremove = true;
+		s.sortable = true;
+		s.addbtntitle = _('Add LED action');
 
 		s.option(form.Value, 'name', _('Name'));
 
@@ -70,33 +54,38 @@ return L.view.extend({
 		o = s.option(form.Flag, 'default', _('Default state'));
 		o.rmempty = false;
 
-		trigger = s.option(form.ListValue, 'trigger', _('Trigger'));
-		Object.keys(triggers).sort().forEach(function(t) { trigger.value(t, t.replace(/-/g, '')) });
+		o = s.option(form.ListValue, 'trigger', _('Trigger'));
 		if (usb.devices && usb.devices.length)
-			trigger.value('usbdev');
+			triggers['usbdev'] = true;
 		if (usb.ports && usb.ports.length)
-			trigger.value('usbport');
+			triggers['usbport'] = true;
+		Object.keys(triggers).sort().forEach(function(t) { o.value(t, t.replace(/-/g, '')) });
 
 		o = s.option(form.Value, 'delayon', _('On-State Delay'));
+		o.modalonly = true;
 		o.depends('trigger', 'timer');
 
 		o = s.option(form.Value, 'delayoff', _('Off-State Delay'));
+		o.modalonly = true;
 		o.depends('trigger', 'timer');
 
-		o = s.option(form.ListValue, '_net_dev', _('Device'));
+		o = s.option(widgets.DeviceSelect, '_net_dev', _('Device'));
 		o.rmempty = true;
 		o.ucioption = 'dev';
+		o.modalonly = true;
+		o.noaliases = true;
 		o.depends('trigger', 'netdev');
 		o.remove = function(section_id) {
-			var t = trigger.formvalue(section_id);
-			if (t != 'netdev' && t != 'usbdev')
+			var topt = this.map.lookupOption('trigger', section_id),
+			    tval = topt ? topt[0].formvalue(section_id) : null;
+
+			if (tval != 'netdev' && tval != 'usbdev')
 				uci.unset('system', section_id, 'dev');
 		};
-		o.value('');
-		netdevs.sort().forEach(function(dev) { o.value(dev) });
 
 		o = s.option(form.MultiValue, 'mode', _('Trigger Mode'));
 		o.rmempty = true;
+		o.modalonly = true;
 		o.depends('trigger', 'netdev');
 		o.value('link', _('Link On'));
 		o.value('tx', _('Transmit'));
@@ -107,9 +96,12 @@ return L.view.extend({
 			o.depends('trigger', 'usbdev');
 			o.rmempty = true;
 			o.ucioption = 'dev';
+			o.modalonly = true;
 			o.remove = function(section_id) {
-				var t = trigger.formvalue(section_id);
-				if (t != 'netdev' && t != 'usbdev')
+				var topt = this.map.lookupOption('trigger', section_id),
+				    tval = topt ? topt[0].formvalue(section_id) : null;
+
+				if (tval != 'netdev' && tval != 'usbdev')
 					uci.unset('system', section_id, 'dev');
 			}
 			o.value('');
@@ -122,6 +114,7 @@ return L.view.extend({
 			o = s.option(form.MultiValue, 'port', _('USB Ports'));
 			o.depends('trigger', 'usbport');
 			o.rmempty = true;
+			o.modalonly = true;
 			o.cfgvalue = function(section_id) {
 				var ports = [],
 				    value = uci.get('system', section_id, 'port');
@@ -130,20 +123,28 @@ return L.view.extend({
 					value = String(value || '').split(/\s+/);
 
 				for (var i = 0; i < value.length; i++)
-					if (value[i].match(/^usb(\d+)-port(\d+)$/))
-						ports.push(value[i]);
-					else if (value[i].match(/^(\d+)-(\d+)$/))
+					if (value[i].match(/^(\d+)-(\d+)$/))
 						ports.push('usb%d-port%d'.format(Regexp.$1, Regexp.$2));
+					else
+						ports.push(value[i]);
 
 				return ports;
 			};
 			usb.ports.forEach(function(usbport) {
-				o.value('usb%d-port%d'.format(usbport.hub, usbport.port),
-				        'Hub %d, Port %d'.format(usbport.hub, usbport.port));
+				var dev = (usbport.device && Array.isArray(usb.devices))
+					? usb.devices.filter(function(d) { return d.id == usbport.device })[0] : null;
+
+				var label = _('Port %s').format(usbport.port);
+
+				if (dev)
+					label += ' (%s - %s)'.format(dev.vendor || '?', dev.product || '?');
+
+				o.value(usbport.port, label);
 			});
 		}
 
 		o = s.option(form.Value, 'port_mask', _('Switch Port Mask'));
+		o.modalonly = true;
 		o.depends('trigger', 'switch0');
 		o.depends('trigger', 'switch1');
 
