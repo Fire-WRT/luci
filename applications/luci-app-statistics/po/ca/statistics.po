@@ -5,15 +5,16 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2009-06-10 03:40+0200\n"
-"PO-Revision-Date: 2014-08-07 20:11+0200\n"
-"Last-Translator: Alex <alexhenrie24@gmail.com>\n"
-"Language-Team: LANGUAGE <LL@li.org>\n"
+"PO-Revision-Date: 2019-10-21 07:49+0000\n"
+"Last-Translator: Adolfo Jayme Barrientos <fitojb@ubuntu.com>\n"
+"Language-Team: Catalan <https://hosted.weblate.org/projects/openwrt/"
+"luciapplicationsstatistics/ca/>\n"
 "Language: ca\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=2; plural=(n != 1);\n"
-"X-Generator: Pootle 2.0.6\n"
+"Plural-Forms: nplurals=2; plural=n != 1;\n"
+"X-Generator: Weblate 3.9.1-dev\n"
 
 #: applications/luci-app-statistics/luasrc/statistics/plugins/apcups.lua:7
 #: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/apcups.lua:7
@@ -22,6 +23,10 @@ msgstr ""
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/apcups.lua:5
 msgid "APCUPS Plugin Configuration"
+msgstr ""
+
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/memory.lua:15
+msgid "Absolute values"
 msgstr ""
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/iptables.lua:70
@@ -47,11 +52,11 @@ msgstr "Afegeix ordre de notificació"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/ping.lua:24
 msgid "Address family"
-msgstr ""
+msgstr "Família d’adreces"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/openvpn.lua:23
 msgid "Aggregate number of connected users"
-msgstr ""
+msgstr "Nombre totalitzat d’usuaris connectats"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/collectd.lua:24
 msgid "Base Directory"
@@ -59,20 +64,26 @@ msgstr "Directori base"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/netlink.lua:24
 msgid "Basic monitoring"
-msgstr "Monitoreig bàsic"
+msgstr "Monitoratge bàsic"
+
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpu.lua:18
+msgid "By setting this, CPU is not aggregate of all processors on the system"
+msgstr ""
+"En definir això, la CPU no serà una agregació de tots els processadors del "
+"sistema"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/contextswitch.lua:4
 msgid "CPU Context Switches Plugin Configuration"
-msgstr ""
+msgstr "Configuració de connectors dels commutadors de context de CPU"
 
 #: applications/luci-app-statistics/luasrc/statistics/plugins/cpufreq.lua:7
-#: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/cpufreq.lua:6
+#: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/cpufreq.lua:9
 msgid "CPU Frequency"
-msgstr ""
+msgstr "Freqüència de la CPU"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpufreq.lua:4
 msgid "CPU Frequency Plugin Configuration"
-msgstr ""
+msgstr "Configuració del connector de freqüència de CPU"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpu.lua:5
 msgid "CPU Plugin Configuration"
@@ -161,15 +172,15 @@ msgstr "Fitxer de definició de dades"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/iptables.lua:96
 msgid "Destination ip range"
-msgstr "Rang d'IP destí"
+msgstr "Interval d’IP de destinació"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/collectd.lua:32
 msgid "Directory for collectd plugins"
-msgstr "Directori pels connectors connectd"
+msgstr "Directori per als connectors del connectd"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/collectd.lua:28
 msgid "Directory for sub-configurations"
-msgstr "Directori per sub-configuracions"
+msgstr "Directori per a les subconfiguracions"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/disk.lua:5
 msgid "Disk Plugin Configuration"
@@ -207,13 +218,13 @@ msgstr ""
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/curl.lua:17
 msgid "Enable"
-msgstr ""
+msgstr "Activa"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/apcups.lua:14
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/conntrack.lua:10
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/contextswitch.lua:11
-#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpu.lua:12
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpufreq.lua:11
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpu.lua:12
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/csv.lua:15
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/curl.lua:8
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/df.lua:15
@@ -262,6 +273,10 @@ msgstr "Exec"
 msgid "Exec Plugin Configuration"
 msgstr "Configuració del connector exec"
 
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpufreq.lua:15
+msgid "Extra items"
+msgstr ""
+
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/netlink.lua:68
 msgid "Filter class monitoring"
 msgstr "Monitoreig de classe filter"
@@ -285,7 +300,7 @@ msgstr ""
 
 #: applications/luci-app-statistics/luasrc/controller/luci_statistics/luci_statistics.lua:23
 msgid "General plugins"
-msgstr ""
+msgstr "Connectors generals"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/openvpn.lua:17
 msgid "Generate a separate graph for each logged user"
@@ -332,11 +347,11 @@ msgstr ""
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/olsrd.lua:13
 msgid "Host"
-msgstr "Host"
+msgstr "Amfitrió"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/collectd.lua:19
 msgid "Hostname"
-msgstr "Nom de host"
+msgstr "Nom de l’amfitrió"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/olsrd.lua:13
 msgid "IP or hostname where to get the txtinfo output from"
@@ -407,7 +422,7 @@ msgid "Maximum allowed connections"
 msgstr "Connexions màximes permeses"
 
 #: applications/luci-app-statistics/luasrc/statistics/plugins/memory.lua:7
-#: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/memory.lua:15
+#: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/memory.lua:7
 msgid "Memory"
 msgstr "Memòria"
 
@@ -484,9 +499,13 @@ msgstr "Monitoritza processos"
 msgid "Monitor remote ports"
 msgstr "Monitoritza els ports remots"
 
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpufreq.lua:15
+msgid "More details about frequency usage and transitions"
+msgstr ""
+
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/curl.lua:20
 msgid "Name"
-msgstr ""
+msgstr "Nom"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/iptables.lua:45
 msgid "Name of the rule"
@@ -565,6 +584,10 @@ msgstr "Interfície sortint"
 msgid "Output plugins"
 msgstr "Connectors de sortida"
 
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/memory.lua:23
+msgid "Percent values"
+msgstr ""
+
 #: applications/luci-app-statistics/luasrc/statistics/plugins/ping.lua:7
 #: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/ping.lua:7
 msgid "Ping"
@@ -596,7 +619,7 @@ msgid "Processes to monitor separated by space"
 msgstr ""
 
 #: applications/luci-app-statistics/luasrc/statistics/plugins/cpu.lua:7
-#: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/cpu.lua:7
+#: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/cpu.lua:10
 msgid "Processor"
 msgstr "Processador"
 
@@ -624,6 +647,18 @@ msgstr "RRDTool"
 msgid "RRDTool Plugin Configuration"
 msgstr "Configuració del connector RRDTool"
 
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpu.lua:17
+msgid "Report by CPU"
+msgstr ""
+
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpu.lua:24
+msgid "Report by state"
+msgstr ""
+
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpu.lua:31
+msgid "Report in percent"
+msgstr ""
+
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/rrdtool.lua:74
 msgid "Rows per RRA"
 msgstr "Files per RRA"
@@ -645,20 +680,20 @@ msgstr "Segons"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/sensors.lua:86
 msgid "Sensor list"
-msgstr ""
+msgstr "Llista de sensors"
 
 #: applications/luci-app-statistics/luasrc/statistics/plugins/sensors.lua:7
 #: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/sensors.lua:7
 msgid "Sensors"
-msgstr ""
+msgstr "Sensors"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/sensors.lua:64
 msgid "Sensors Plugin Configuration"
-msgstr ""
+msgstr "Configuració del connector Sensors"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/network.lua:54
 msgid "Server host"
-msgstr "Màquina servidor"
+msgstr "Amfitrió del servidor"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/network.lua:58
 msgid "Server port"
@@ -1074,6 +1109,19 @@ msgstr "Usuari"
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/netlink.lua:35
 msgid "Verbose monitoring"
 msgstr "Monitoreig detallat"
+
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpu.lua:25
+msgid "When set to true, reports per-state metric (system, user, idle)"
+msgstr ""
+
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/memory.lua:16
+msgid "When set to true, we request absolute values"
+msgstr ""
+
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpu.lua:32
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/memory.lua:24
+msgid "When set to true, we request percentage values"
+msgstr ""
 
 #: applications/luci-app-statistics/luasrc/statistics/plugins/iwinfo.lua:7
 #: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/iwinfo.lua:7

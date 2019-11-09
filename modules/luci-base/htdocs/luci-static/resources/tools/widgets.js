@@ -3,6 +3,19 @@
 'require form';
 'require network';
 'require firewall';
+'require fs';
+
+function getUsers() {
+    return fs.lines('/etc/passwd').then(function(lines) {
+        return lines.map(function(line) { return line.split(/:/)[0] });
+    });
+}
+
+function getGroups() {
+    return fs.lines('/etc/group').then(function(lines) {
+        return lines.map(function(line) { return line.split(/:/)[0] });
+    });
+}
 
 var CBIZoneSelect = form.ListValue.extend({
 	__name__: 'CBI.ZoneSelect',
@@ -358,7 +371,7 @@ var CBINetworkSelect = form.ListValue.extend({
 			var network = this.networks[i],
 			    name = network.getName();
 
-			if (name == 'loopback' || !this.filter(section_id, name))
+			if (name == 'loopback' || name == this.exclude || !this.filter(section_id, name))
 				continue;
 
 			if (this.novirtual && network.isVirtual())
@@ -420,8 +433,12 @@ var CBIDeviceSelect = form.ListValue.extend({
 	__name__: 'CBI.DeviceSelect',
 
 	load: function(section_id) {
-		return network.getDevices().then(L.bind(function(devices) {
-			this.devices = devices;
+		return Promise.all([
+			network.getDevices(),
+			this.noaliases ? null : network.getNetworks()
+		]).then(L.bind(function(data) {
+			this.devices = data[0];
+			this.networks = data[1];
 
 			return this.super('load', section_id);
 		}, this));
@@ -474,13 +491,42 @@ var CBIDeviceSelect = form.ListValue.extend({
 			var networks = device.getNetworks();
 
 			if (networks.length > 0)
-				L.dom.append(item.lastChild, [ ' (', networks.join(', '), ')' ]);
+				L.dom.append(item.lastChild, [ ' (', networks.map(function(n) { return n.getName() }).join(', '), ')' ]);
 
 			if (checked[name])
 				values.push(name);
 
 			choices[name] = item;
 			order.push(name);
+		}
+
+		if (this.networks != null) {
+			for (var i = 0; i < this.networks.length; i++) {
+				var net = this.networks[i],
+				    device = network.instantiateDevice('@%s'.format(net.getName()), net),
+				    name = device.getName();
+
+				if (name == '@loopback' || name == this.exclude || !this.filter(section_id, name))
+					continue;
+
+				if (this.noinactive && net.isUp() == false)
+					continue;
+
+				var item = E([
+					E('img', {
+						'title': device.getI18n(),
+						'src': L.resource('icons/alias%s.png'.format(net.isUp() ? '' : '_disabled'))
+					}),
+					E('span', { 'class': 'hide-open' }, [ name ]),
+					E('span', { 'class': 'hide-close'}, [ device.getI18n() ])
+				]);
+
+				if (checked[name])
+					values.push(name);
+
+				choices[name] = item;
+				order.push(name);
+			}
 		}
 
 		if (!this.nocreate) {
@@ -526,10 +572,48 @@ var CBIDeviceSelect = form.ListValue.extend({
 	},
 });
 
+var CBIUserSelect = form.ListValue.extend({
+	__name__: 'CBI.UserSelect',
+
+	load: function(section_id) {
+		return getUsers().then(L.bind(function(users) {
+			for (var i = 0; i < users.length; i++) {
+				this.value(users[i]);
+			}
+
+			return this.super('load', section_id);
+		}, this));
+	},
+
+	filter: function(section_id, value) {
+		return true;
+	},
+});
+
+var CBIGroupSelect = form.ListValue.extend({
+	__name__: 'CBI.GroupSelect',
+
+	load: function(section_id) {
+		return getGroups().then(L.bind(function(groups) {
+			for (var i = 0; i < groups.length; i++) {
+				this.value(groups[i]);
+			}
+
+			return this.super('load', section_id);
+		}, this));
+	},
+
+	filter: function(section_id, value) {
+		return true;
+	},
+});
+
 
 return L.Class.extend({
 	ZoneSelect: CBIZoneSelect,
 	ZoneForwards: CBIZoneForwards,
 	NetworkSelect: CBINetworkSelect,
 	DeviceSelect: CBIDeviceSelect,
+	UserSelect: CBIUserSelect,
+	GroupSelect: CBIGroupSelect,
 });

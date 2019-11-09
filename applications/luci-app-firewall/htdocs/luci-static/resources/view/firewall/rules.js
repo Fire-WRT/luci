@@ -111,8 +111,9 @@ function rule_target_txt(s) {
 
 return L.view.extend({
 	callHostHints: rpc.declare({
-		object: 'luci',
-		method: 'host_hints'
+		object: 'luci-rpc',
+		method: 'getHostHints',
+		expect: { '': {} }
 	}),
 
 	load: function() {

@@ -7,28 +7,22 @@
 'require tools.widgets as widgets';
 
 return L.view.extend({
-	callOffloadSupport: rpc.declare({
-		object: 'luci',
-		method: 'offload_support',
-		expect: { offload_support: false }
-	}),
-
 	callConntrackHelpers: rpc.declare({
 		object: 'luci',
-		method: 'conntrack_helpers',
-		expect: { helpers: [] }
+		method: 'getConntrackHelpers',
+		expect: { result: [] }
 	}),
 
 	load: function() {
 		return Promise.all([
-			this.callOffloadSupport(),
-			this.callConntrackHelpers()
+			this.callConntrackHelpers(),
+			firewall.getDefaults()
 		]);
 	},
 
 	render: function(data) {
-		var hasOffloading = data[0],
-		    ctHelpers = data[1],
+		var ctHelpers = data[0],
+		    fwDefaults = data[1],
 		    m, s, o, inp, out;
 
 		m = new form.Map('firewall', _('Firewall - Zone Settings'),
@@ -55,7 +49,7 @@ return L.view.extend({
 
 		/* Netfilter flow offload support */
 
-		if (hasOffloading) {
+		if (L.hasSystemFeature('offloading')) {
 			s = m.section(form.TypedSection, 'defaults', _('Routing/NAT Offloading'),
 				_('Experimental feature. Not fully compatible with QoS/SQM.'));
 
@@ -90,7 +84,8 @@ return L.view.extend({
 		o.modalonly = true;
 		o.cfgvalue = function(section_id) {
 			var name = uci.get('firewall', section_id, 'name');
-
+			if (name == null)
+				name = _("this new zone");
 			return _('This section defines common properties of %q. The <em>input</em> and <em>output</em> options set the default policies for traffic entering and leaving this zone while the <em>forward</em> option describes the policy for forwarded traffic between different networks within the zone. <em>Covered networks</em> specifies which available networks are members of this zone.')
 				.replace(/%s/g, name).replace(/%q/g, '"' + name + '"');
 		};
@@ -98,11 +93,14 @@ return L.view.extend({
 		o = s.taboption('general', form.Value, 'name', _('Name'));
 		o.placeholder = _('Unnamed zone');
 		o.modalonly = true;
+		o.rmempty = false;
 		o.datatype = 'and(uciname,maxlength(11))';
 		o.write = function(section_id, formvalue) {
 			var cfgvalue = this.cfgvalue(section_id);
 
-			if (cfgvalue != formvalue)
+			if (cfgvalue == null || cfgvalue == '')
+				return uci.set('firewall', section_id, 'name', formvalue);
+			else if (cfgvalue != formvalue)
 				return firewall.renameZone(cfgvalue, formvalue);
 		};
 
@@ -125,6 +123,10 @@ return L.view.extend({
 			p[i].value('ACCEPT', _('accept'));
 			p[i].editable = true;
 		}
+
+		p[0].default = fwDefaults.getInput();
+		p[1].default = fwDefaults.getOutput();
+		p[2].default = fwDefaults.getForward();
 
 		o = s.taboption('general', form.Flag, 'masq', _('Masquerading'));
 		o.editable = true;
@@ -167,13 +169,15 @@ return L.view.extend({
 		o.modalonly = true;
 		o.cfgvalue = function(section_id) {
 			var name = uci.get('firewall', section_id, 'name');
-
+			if (name == null)
+				name = _("this new zone");
 			return _('The options below control the forwarding policies between this zone (%s) and other zones. <em>Destination zones</em> cover forwarded traffic <strong>originating from %q</strong>. <em>Source zones</em> match forwarded traffic from other zones <strong>targeted at %q</strong>. The forwarding rule is <em>unidirectional</em>, e.g. a forward from lan to wan does <em>not</em> imply a permission to forward from wan to lan as well.')
 				.format(name);
 		};
 
 		o = s.taboption('advanced', widgets.DeviceSelect, 'device', _('Covered devices'), _('Use this option to classify zone traffic by raw, non-<em>uci</em> managed network devices.'));
 		o.modalonly = true;
+		o.noaliases = true;
 		o.multiple = true;
 
 		o = s.taboption('advanced', form.DynamicList, 'subnet', _('Covered subnets'), _('Use this option to classify zone traffic by source or destination subnet instead of networks or devices.'));
@@ -256,8 +260,11 @@ return L.view.extend({
 		o.rawhtml = true;
 		o.modalonly = true;
 		o.cfgvalue = function(section_id) {
+			var name = uci.get('firewall', section_id, 'name');
+			if (name == null)
+				name = _("this new zone");
 			return _('The options below control the forwarding policies between this zone (%s) and other zones. <em>Destination zones</em> cover forwarded traffic <strong>originating from %q</strong>. <em>Source zones</em> match forwarded traffic from other zones <strong>targeted at %q</strong>. The forwarding rule is <em>unidirectional</em>, e.g. a forward from lan to wan does <em>not</em> imply a permission to forward from wan to lan as well.')
-				.format(uci.get('firewall', section_id, 'name'));
+				.format(name);
 		};
 
 		out = o = s.taboption('general', widgets.ZoneSelect, 'out', _('Allow forward to <em>destination zones</em>:'));
@@ -270,7 +277,7 @@ return L.view.extend({
 		o.cfgvalue = function(section_id) {
 			var out = (this.option == 'out'),
 			    zone = this.lookupZone(uci.get('firewall', section_id, 'name')),
-			    fwds = zone.getForwardingsBy(out ? 'src' : 'dest'),
+			    fwds = zone ? zone.getForwardingsBy(out ? 'src' : 'dest') : [],
 			    value = [];
 
 			for (var i = 0; i < fwds.length; i++)
@@ -281,7 +288,7 @@ return L.view.extend({
 		o.write = o.remove = function(section_id, formvalue) {
 			var out = (this.option == 'out'),
 			    zone = this.lookupZone(uci.get('firewall', section_id, 'name')),
-			    fwds = zone.getForwardingsBy(out ? 'src' : 'dest');
+			    fwds = zone ? zone.getForwardingsBy(out ? 'src' : 'dest') : [];
 
 			if (formvalue == null)
 				formvalue = [];

@@ -4,6 +4,173 @@
 
 var scope = this;
 
+var CBIJSONConfig = Class.extend({
+	__init__: function(data) {
+		data = Object.assign({}, data);
+
+		this.data = {};
+
+		var num_sections = 0,
+		    section_ids = [];
+
+		for (var sectiontype in data) {
+			if (!data.hasOwnProperty(sectiontype))
+				continue;
+
+			if (L.isObject(data[sectiontype])) {
+				this.data[sectiontype] = Object.assign(data[sectiontype], {
+					'.anonymous': false,
+					'.name': sectiontype,
+					'.type': sectiontype
+				});
+
+				section_ids.push(sectiontype);
+				num_sections++;
+			}
+			else if (Array.isArray(data[sectiontype])) {
+				for (var i = 0, index = 0; i < data[sectiontype].length; i++) {
+					var item = data[sectiontype][i],
+					    anonymous, name;
+
+					if (!L.isObject(item))
+						continue;
+
+					if (typeof(item['.name']) == 'string') {
+						name = item['.name'];
+						anonymous = false;
+					}
+					else {
+						name = sectiontype + num_sections;
+						anonymous = true;
+					}
+
+					if (!this.data.hasOwnProperty(name))
+						section_ids.push(name);
+
+					this.data[name] = Object.assign(item, {
+						'.index': num_sections++,
+						'.anonymous': anonymous,
+						'.name': name,
+						'.type': sectiontype
+					});
+				}
+			}
+		}
+
+		section_ids.sort(L.bind(function(a, b) {
+			var indexA = (this.data[a]['.index'] != null) ? +this.data[a]['.index'] : 9999,
+			    indexB = (this.data[b]['.index'] != null) ? +this.data[b]['.index'] : 9999;
+
+			if (indexA != indexB)
+				return (indexA - indexB);
+
+			return (a > b);
+		}, this));
+
+		for (var i = 0; i < section_ids.length; i++)
+			this.data[section_ids[i]]['.index'] = i;
+	},
+
+	load: function() {
+		return Promise.resolve(this.data);
+	},
+
+	save: function() {
+		return Promise.resolve();
+	},
+
+	get: function(config, section, option) {
+		if (section == null)
+			return null;
+
+		if (option == null)
+			return this.data[section];
+
+		if (!this.data.hasOwnProperty(section))
+			return null;
+
+		var value = this.data[section][option];
+
+		if (Array.isArray(value))
+			return value;
+
+		if (value != null)
+			return String(value);
+
+		return null;
+	},
+
+	set: function(config, section, option, value) {
+		if (section == null || option == null || option.charAt(0) == '.')
+			return;
+
+		if (!this.data.hasOwnProperty(section))
+			return;
+
+		if (value == null)
+			delete this.data[section][option];
+		else if (Array.isArray(value))
+			this.data[section][option] = value;
+		else
+			this.data[section][option] = String(value);
+	},
+
+	unset: function(config, section, option) {
+		return this.set(config, section, option, null);
+	},
+
+	sections: function(config, sectiontype, callback) {
+		var rv = [];
+
+		for (var section_id in this.data)
+			if (sectiontype == null || this.data[section_id]['.type'] == sectiontype)
+				rv.push(this.data[section_id]);
+
+		rv.sort(function(a, b) { return a['.index'] - b['.index'] });
+
+		if (typeof(callback) == 'function')
+			for (var i = 0; i < rv.length; i++)
+				callback.call(this, rv[i], rv[i]['.name']);
+
+		return rv;
+	},
+
+	add: function(config, sectiontype, sectionname) {
+		var num_sections_type = 0, next_index = 0;
+
+		for (var name in this.data) {
+			num_sections_type += (this.data[name]['.type'] == sectiontype);
+			next_index = Math.max(next_index, this.data[name]['.index']);
+		}
+
+		var section_id = sectionname || sectiontype + num_sections_type;
+
+		if (!this.data.hasOwnProperty(section_id)) {
+			this.data[section_id] = {
+				'.name': section_id,
+				'.type': sectiontype,
+				'.anonymous': (sectionname == null),
+				'.index': next_index + 1
+			};
+		}
+
+		return section_id;
+	},
+
+	remove: function(config, section) {
+		if (this.data.hasOwnProperty(section))
+			delete this.data[section];
+	},
+
+	resolveSID: function(config, section_id) {
+		return section_id;
+	},
+
+	move: function(config, section_id1, section_id2, after) {
+		return uci.move.apply(this, [config, section_id1, section_id2, after]);
+	}
+});
+
 var CBINode = Class.extend({
 	__init__: function(title, description) {
 		this.title = title || '';
@@ -52,11 +219,28 @@ var CBINode = Class.extend({
 	},
 
 	stripTags: function(s) {
-		if (!s.match(/[<>]/))
+		if (typeof(s) == 'string' && !s.match(/[<>]/))
 			return s;
 
 		var x = E('div', {}, s);
 		return x.textContent || x.innerText || '';
+	},
+
+	titleFn: function(attr /*, ... */) {
+		var s = null;
+
+		if (typeof(this[attr]) == 'function')
+			s = this[attr].apply(this, this.varargs(arguments, 1));
+		else if (typeof(this[attr]) == 'string')
+			s = (arguments.length > 1) ? ''.format.apply(this[attr], this.varargs(arguments, 1)) : this[attr];
+
+		if (s != null)
+			s = this.stripTags(String(s)).trim();
+
+		if (s == null || s == '')
+			return null;
+
+		return s;
 	}
 });
 
@@ -66,6 +250,7 @@ var CBIMap = CBINode.extend({
 
 		this.config = config;
 		this.parsechain = [ config ];
+		this.data = uci;
 	},
 
 	findElements: function(/* ... */) {
@@ -101,7 +286,7 @@ var CBIMap = CBINode.extend({
 	},
 
 	load: function() {
-		return uci.load(this.parsechain || [ this.config ])
+		return this.data.load(this.parsechain || [ this.config ])
 			.then(this.loadChildren.bind(this));
 	},
 
@@ -115,17 +300,19 @@ var CBIMap = CBINode.extend({
 		return Promise.all(tasks);
 	},
 
-	save: function() {
+	save: function(cb, silent) {
 		this.checkDepends();
 
 		return this.parse()
-			.then(uci.save.bind(uci))
+			.then(cb)
+			.then(this.data.save.bind(this.data))
 			.then(this.load.bind(this))
-			.then(this.renderContents.bind(this))
 			.catch(function(e) {
-				alert('Cannot save due to invalid values')
+				if (!silent)
+					alert('Cannot save due to invalid values');
+
 				return Promise.reject();
-			});
+			}).finally(this.renderContents.bind(this));
 	},
 
 	reset: function() {
@@ -156,7 +343,10 @@ var CBIMap = CBINode.extend({
 			if (this.description != null && this.description != '')
 				mapEl.appendChild(E('div', { 'class': 'cbi-map-descr' }, this.description));
 
-			L.dom.append(mapEl, nodes);
+			if (this.tabbed)
+				L.dom.append(mapEl, E('div', { 'class': 'cbi-map-tabbed' }, nodes));
+			else
+				L.dom.append(mapEl, nodes);
 
 			if (!initialRender) {
 				mapEl.classList.remove('flash');
@@ -168,17 +358,22 @@ var CBIMap = CBINode.extend({
 
 			this.checkDepends();
 
+			var tabGroups = mapEl.querySelectorAll('.cbi-map-tabbed, .cbi-section-node-tabbed');
+
+			for (var i = 0; i < tabGroups.length; i++)
+				ui.tabs.initTabGroup(tabGroups[i].childNodes);
+
 			return mapEl;
 		}, this));
 	},
 
-	lookupOption: function(name, section_id) {
+	lookupOption: function(name, section_id, config_name) {
 		var id, elem, sid, inst;
 
 		if (name.indexOf('.') > -1)
 			id = 'cbid.%s'.format(name);
 		else
-			id = 'cbid.%s.%s.%s'.format(this.config, section_id, name);
+			id = 'cbid.%s.%s.%s'.format(config_name || this.config, section_id, name);
 
 		elem = this.findElement('data-field', id);
 		sid  = elem ? id.split(/\./)[2] : null;
@@ -198,6 +393,49 @@ var CBIMap = CBINode.extend({
 			this.checkDepends(ev, (n || 10) + 1);
 
 		ui.tabs.updateTabs(ev, this.root);
+	},
+
+	isDependencySatisfied: function(depends, config_name, section_id) {
+		var def = false;
+
+		if (!Array.isArray(depends) || !depends.length)
+			return true;
+
+		for (var i = 0; i < depends.length; i++) {
+			var istat = true,
+			    reverse = false;
+
+			for (var dep in depends[i]) {
+				if (dep == '!reverse') {
+					reverse = true;
+				}
+				else if (dep == '!default') {
+					def = true;
+					istat = false;
+				}
+				else {
+					var res = this.lookupOption(dep, section_id, config_name),
+					    val = (res && res[0].isActive(res[1])) ? res[0].formvalue(res[1]) : null;
+
+					istat = (istat && isEqual(val, depends[i][dep]));
+				}
+			}
+
+			if (istat ^ reverse)
+				return true;
+		}
+
+		return def;
+	}
+});
+
+var CBIJSONMap = CBIMap.extend({
+	__init__: function(data /*, ... */) {
+		this.super('__init__', this.varargs(arguments, 1, 'json'));
+
+		this.config = 'json';
+		this.parsechain = [ 'json' ];
+		this.data = new CBIJSONConfig(data);
 	}
 });
 
@@ -437,7 +675,11 @@ var CBIAbstractValue = CBINode.extend({
 						else if (k.indexOf('.') !== -1)
 							dep['cbid.%s'.format(k)] = list[i][k];
 						else
-							dep['cbid.%s.%s.%s'.format(this.config, this.ucisection || section_id, k)] = list[i][k];
+							dep['cbid.%s.%s.%s'.format(
+								this.uciconfig || this.section.uciconfig || this.map.config,
+								this.ucisection || section_id,
+								k
+							)] = list[i][k];
 					}
 				}
 
@@ -466,51 +708,59 @@ var CBIAbstractValue = CBINode.extend({
 	},
 
 	checkDepends: function(section_id) {
-		var def = false;
+		var config_name = this.uciconfig || this.section.uciconfig || this.map.config,
+		    active = this.map.isDependencySatisfied(this.deps, config_name, section_id);
 
-		if (!Array.isArray(this.deps) || !this.deps.length)
-			return true;
+		if (active)
+			this.updateDefaultValue(section_id);
 
-		for (var i = 0; i < this.deps.length; i++) {
-			var istat = true,
-			    reverse = false;
+		return active;
+	},
 
-			for (var dep in this.deps[i]) {
-				if (dep == '!reverse') {
-					reverse = true;
-				}
-				else if (dep == '!default') {
-					def = true;
-					istat = false;
-				}
-				else {
-					var res = this.map.lookupOption(dep, section_id),
-					    val = res ? res[0].formvalue(res[1]) : null;
+	updateDefaultValue: function(section_id) {
+		if (!L.isObject(this.defaults))
+			return;
 
-					istat = (istat && isEqual(val, this.deps[i][dep]));
-				}
+		var config_name = this.uciconfig || this.section.uciconfig || this.map.config,
+		    cfgvalue = L.toArray(this.cfgvalue(section_id))[0],
+		    default_defval = null, satisified_defval = null;
+
+		for (var value in this.defaults) {
+			if (!this.defaults[value] || this.defaults[value].length == 0) {
+				default_defval = value;
+				continue;
 			}
-
-			if (istat ^ reverse)
-				return true;
+			else if (this.map.isDependencySatisfied(this.defaults[value], config_name, section_id)) {
+				satisified_defval = value;
+				break;
+			}
 		}
 
-		return def;
+		if (satisified_defval == null)
+			satisified_defval = default_defval;
+
+		var node = this.map.findElement('id', this.cbid(section_id));
+		if (node && node.getAttribute('data-changed') != 'true' && satisified_defval != null && cfgvalue == null)
+			L.dom.callClassMethod(node, 'setValue', satisified_defval);
+
+		this.default = satisified_defval;
 	},
 
 	cbid: function(section_id) {
 		if (section_id == null)
 			L.error('TypeError', 'Section ID required');
 
-		return 'cbid.%s.%s.%s'.format(this.map.config, section_id, this.option);
+		return 'cbid.%s.%s.%s'.format(
+			this.uciconfig || this.section.uciconfig || this.map.config,
+			section_id, this.option);
 	},
 
 	load: function(section_id) {
 		if (section_id == null)
 			L.error('TypeError', 'Section ID required');
 
-		return uci.get(
-			this.uciconfig || this.map.config,
+		return this.map.data.get(
+			this.uciconfig || this.section.uciconfig || this.map.config,
 			this.ucisection || section_id,
 			this.ucioption || this.option);
 	},
@@ -584,7 +834,7 @@ var CBIAbstractValue = CBINode.extend({
 				return Promise.resolve(this.write(section_id, fval));
 		}
 		else {
-			if (this.rmempty || this.optional) {
+			if (!active || this.rmempty || this.optional) {
 				return Promise.resolve(this.remove(section_id));
 			}
 			else if (!isEqual(cval, fval)) {
@@ -597,16 +847,16 @@ var CBIAbstractValue = CBINode.extend({
 	},
 
 	write: function(section_id, formvalue) {
-		return uci.set(
-			this.uciconfig || this.map.config,
+		return this.map.data.set(
+			this.uciconfig || this.section.uciconfig || this.map.config,
 			this.ucisection || section_id,
 			this.ucioption || this.option,
 			formvalue);
 	},
 
 	remove: function(section_id) {
-		return uci.unset(
-			this.uciconfig || this.map.config,
+		return this.map.data.unset(
+			this.uciconfig || this.section.uciconfig || this.map.config,
 			this.ucisection || section_id,
 			this.ucioption || this.option);
 	}
@@ -616,7 +866,7 @@ var CBITypedSection = CBIAbstractSection.extend({
 	__name__: 'CBI.TypedSection',
 
 	cfgsections: function() {
-		return uci.sections(this.uciconfig || this.map.config, this.sectiontype)
+		return this.map.data.sections(this.uciconfig || this.map.config, this.sectiontype)
 			.map(function(s) { return s['.name'] })
 			.filter(L.bind(this.filter, this));
 	},
@@ -624,15 +874,15 @@ var CBITypedSection = CBIAbstractSection.extend({
 	handleAdd: function(ev, name) {
 		var config_name = this.uciconfig || this.map.config;
 
-		uci.add(config_name, this.sectiontype, name);
-		this.map.save();
+		this.map.data.add(config_name, this.sectiontype, name);
+		return this.map.save(null, true);
 	},
 
 	handleRemove: function(section_id, ev) {
 		var config_name = this.uciconfig || this.map.config;
 
-		uci.remove(config_name, section_id);
-		this.map.save();
+		this.map.data.remove(config_name, section_id);
+		return this.map.save(null, true);
 	},
 
 	renderSectionAdd: function(extra_class) {
@@ -640,19 +890,18 @@ var CBITypedSection = CBIAbstractSection.extend({
 			return E([]);
 
 		var createEl = E('div', { 'class': 'cbi-section-create' }),
-		    config_name = this.uciconfig || this.map.config;
+		    config_name = this.uciconfig || this.map.config,
+		    btn_title = this.titleFn('addbtntitle');
 
 		if (extra_class != null)
 			createEl.classList.add(extra_class);
 
 		if (this.anonymous) {
-			createEl.appendChild(E('input', {
-				'type': 'submit',
+			createEl.appendChild(E('button', {
 				'class': 'cbi-button cbi-button-add',
-				'value': _('Add'),
-				'title': _('Add'),
-				'click': L.bind(this.handleAdd, this)
-			}));
+				'title': btn_title || _('Add'),
+				'click': L.ui.createHandlerFn(this, 'handleAdd')
+			}, [ btn_title || _('Add') ]));
 		}
 		else {
 			var nameEl = E('input', {
@@ -665,14 +914,14 @@ var CBITypedSection = CBIAbstractSection.extend({
 				E('input', {
 					'class': 'cbi-button cbi-button-add',
 					'type': 'submit',
-					'value': _('Add'),
-					'title': _('Add'),
-					'click': L.bind(function(ev) {
+					'value': btn_title || _('Add'),
+					'title': btn_title || _('Add'),
+					'click': L.ui.createHandlerFn(this, function(ev) {
 						if (nameEl.classList.contains('cbi-input-invalid'))
 							return;
 
-						this.handleAdd(ev, nameEl.value);
-					}, this)
+						return this.handleAdd(ev, nameEl.value);
+					})
 				})
 			]);
 
@@ -682,12 +931,21 @@ var CBITypedSection = CBIAbstractSection.extend({
 		return createEl;
 	},
 
+	renderSectionPlaceholder: function() {
+		return E([
+			E('em', _('This section contains no values yet')),
+			E('br'), E('br')
+		]);
+	},
+
 	renderContents: function(cfgsections, nodes) {
 		var section_id = null,
 		    config_name = this.uciconfig || this.map.config,
 		    sectionEl = E('div', {
 				'id': 'cbi-%s-%s'.format(config_name, this.sectiontype),
-				'class': 'cbi-section'
+				'class': 'cbi-section',
+				'data-tab': (this.map.tabbed && !this.parentoption) ? this.sectiontype : null,
+				'data-tab-title': (this.map.tabbed && !this.parentoption) ? this.title || this.sectiontype : null
 			});
 
 		if (this.title != null && this.title != '')
@@ -700,14 +958,12 @@ var CBITypedSection = CBIAbstractSection.extend({
 			if (this.addremove) {
 				sectionEl.appendChild(
 					E('div', { 'class': 'cbi-section-remove right' },
-						E('input', {
-							'type': 'submit',
+						E('button', {
 							'class': 'cbi-button',
 							'name': 'cbi.rts.%s.%s'.format(config_name, cfgsections[i]),
-							'value': _('Delete'),
 							'data-section-id': cfgsections[i],
-							'click': L.bind(this.handleRemove, this, cfgsections[i])
-						})));
+							'click': L.ui.createHandlerFn(this, 'handleRemove', cfgsections[i])
+						}, [ _('Delete') ])));
 			}
 
 			if (!this.anonymous)
@@ -716,18 +972,13 @@ var CBITypedSection = CBIAbstractSection.extend({
 			sectionEl.appendChild(E('div', {
 				'id': 'cbi-%s-%s'.format(config_name, cfgsections[i]),
 				'class': this.tabs
-					? 'cbi-section-node cbi-section-node-tabbed' : 'cbi-section-node'
+					? 'cbi-section-node cbi-section-node-tabbed' : 'cbi-section-node',
+				'data-section-id': cfgsections[i]
 			}, nodes[i]));
-
-			if (this.tabs)
-				ui.tabs.initTabGroup(sectionEl.lastChild.childNodes);
 		}
 
 		if (nodes.length == 0)
-			L.dom.append(sectionEl, [
-				E('em', _('This section contains no values yet')),
-				E('br'), E('br')
-			]);
+			sectionEl.appendChild(this.renderSectionPlaceholder());
 
 		sectionEl.appendChild(this.renderSectionAdd());
 
@@ -761,7 +1012,9 @@ var CBITableSection = CBITypedSection.extend({
 		    has_more = max_cols < this.children.length,
 		    sectionEl = E('div', {
 				'id': 'cbi-%s-%s'.format(config_name, this.sectiontype),
-				'class': 'cbi-section cbi-tblsection'
+				'class': 'cbi-section cbi-tblsection',
+				'data-tab': (this.map.tabbed && !this.parentoption) ? this.sectiontype : null,
+				'data-tab-title': (this.map.tabbed && !this.parentoption) ? this.title || this.sectiontype : null
 			}),
 			tableEl = E('div', {
 				'class': 'table cbi-section-table'
@@ -776,8 +1029,10 @@ var CBITableSection = CBITypedSection.extend({
 		tableEl.appendChild(this.renderHeaderRows(max_cols));
 
 		for (var i = 0; i < nodes.length; i++) {
-			var sectionname = this.stripTags((typeof(this.sectiontitle) == 'function')
-				? String(this.sectiontitle(cfgsections[i]) || '') : cfgsections[i]).trim();
+			var sectionname = this.titleFn('sectiontitle', cfgsections[i]);
+
+			if (sectionname == null)
+				sectionname = cfgsections[i];
 
 			var trEl = E('div', {
 				'id': 'cbi-%s-%s'.format(config_name, cfgsections[i]),
@@ -791,7 +1046,8 @@ var CBITableSection = CBITypedSection.extend({
 				'dragleave': this.sortable ? L.bind(this.handleDragLeave, this) : null,
 				'dragend': this.sortable ? L.bind(this.handleDragEnd, this) : null,
 				'drop': this.sortable ? L.bind(this.handleDrop, this) : null,
-				'data-title': (sectionname && (!this.anonymous || this.sectiontitle)) ? sectionname : null
+				'data-title': (sectionname && (!this.anonymous || this.sectiontitle)) ? sectionname : null,
+				'data-section-id': cfgsections[i]
 			});
 
 			if (this.extedit || this.rowcolors)
@@ -822,6 +1078,8 @@ var CBITableSection = CBITypedSection.extend({
 	renderHeaderRows: function(max_cols) {
 		var has_titles = false,
 		    has_descriptions = false,
+		    max_cols = isNaN(this.max_cols) ? this.children.length : this.max_cols,
+		    has_more = max_cols < this.children.length,
 		    anon_class = (!this.anonymous || this.sectiontitle) ? 'named' : 'anonymous',
 		    trEls = E([]);
 
@@ -931,40 +1189,33 @@ var CBITableSection = CBITypedSection.extend({
 				}, this, section_id);
 
 			L.dom.append(tdEl.lastElementChild,
-				E('input', {
-					'type': 'button',
-					'value': _('Edit'),
+				E('button', {
 					'title': _('Edit'),
 					'class': 'cbi-button cbi-button-edit',
 					'click': evFn
-				})
+				}, [ _('Edit') ])
 			);
 		}
 
 		if (more_label) {
 			L.dom.append(tdEl.lastElementChild,
-				E('input', {
-					'type': 'button',
-					'value': more_label,
+				E('button', {
 					'title': more_label,
 					'class': 'cbi-button cbi-button-edit',
-					'click': L.bind(this.renderMoreOptionsModal, this, section_id)
-				})
+					'click': L.ui.createHandlerFn(this, 'renderMoreOptionsModal', section_id)
+				}, [ more_label ])
 			);
 		}
 
 		if (this.addremove) {
+			var btn_title = this.titleFn('removebtntitle', section_id);
+
 			L.dom.append(tdEl.lastElementChild,
-				E('input', {
-					'type': 'submit',
-					'value': _('Delete'),
-					'title': _('Delete'),
+				E('button', {
+					'title': btn_title || _('Delete'),
 					'class': 'cbi-button cbi-button-remove',
-					'click': L.bind(function(sid, ev) {
-						uci.remove(config_name, sid);
-						this.map.save();
-					}, this, section_id)
-				})
+					'click': L.ui.createHandlerFn(this, 'handleRemove', section_id)
+				}, [ btn_title || _('Delete') ])
 			);
 		}
 
@@ -1045,7 +1296,7 @@ var CBITableSection = CBITypedSection.extend({
 		        sid2 = s.targetNode.getAttribute('data-sid');
 
 		    s.node.parentNode.insertBefore(s.node, ref_node);
-		    uci.move(config_name, sid1, sid2, after);
+		    this.map.data.move(config_name, sid1, sid2, after);
 		}
 
 		scope.dragState = null;
@@ -1077,16 +1328,18 @@ var CBITableSection = CBITypedSection.extend({
 		    name = null,
 		    m = new CBIMap(this.map.config, null, null),
 		    s = m.section(CBINamedSection, section_id, this.sectiontype);
-		    s.tabs = this.tabs;
-		    s.tab_names = this.tab_names;
 
-		if (typeof(this.sectiontitle) == 'function')
-			name = this.stripTags(String(this.sectiontitle(section_id) || ''));
+		m.parent = parent;
+
+		s.tabs = this.tabs;
+		s.tab_names = this.tab_names;
+
+		if ((name = this.titleFn('modaltitle', section_id)) != null)
+			title = name;
+		else if ((name = this.titleFn('sectiontitle', section_id)) != null)
+			title = '%s - %s'.format(parent.title, name);
 		else if (!this.anonymous)
-			name = section_id;
-
-		if (name)
-			title += ' - ' + name;
+			title = '%s - %s'.format(parent.title, section_id);
 
 		for (var i = 0; i < this.children.length; i++) {
 			var o1 = this.children[i];
@@ -1114,24 +1367,18 @@ var CBITableSection = CBITypedSection.extend({
 			}
 		}
 
-		//ev.target.classList.add('spinning');
-		Promise.resolve(this.addModalOptions(s, section_id, ev)).then(L.bind(m.render, m)).then(L.bind(function(nodes) {
-			//ev.target.classList.remove('spinning');
+		return Promise.resolve(this.addModalOptions(s, section_id, ev)).then(L.bind(m.render, m)).then(L.bind(function(nodes) {
 			L.ui.showModal(title, [
 				nodes,
 				E('div', { 'class': 'right' }, [
-					E('input', {
-						'type': 'button',
+					E('button', {
 						'class': 'btn',
-						'click': L.bind(this.handleModalCancel, this, m),
-						'value': _('Dismiss')
-					}), ' ',
-					E('input', {
-						'type': 'button',
+						'click': L.ui.createHandlerFn(this, 'handleModalCancel', m)
+					}, [ _('Dismiss') ]), ' ',
+					E('button', {
 						'class': 'cbi-button cbi-button-positive important',
-						'click': L.bind(this.handleModalSave, this, m),
-						'value': _('Save')
-					})
+						'click': L.ui.createHandlerFn(this, 'handleModalSave', m)
+					}, [ _('Save') ])
 				])
 			], 'cbi-modal');
 		}, this)).catch(L.error);
@@ -1143,12 +1390,12 @@ var CBIGridSection = CBITableSection.extend({
 		CBIAbstractSection.prototype.tab.call(this, name, title, description);
 	},
 
-	handleAdd: function(ev) {
+	handleAdd: function(ev, name) {
 		var config_name = this.uciconfig || this.map.config,
-		    section_id = uci.add(config_name, this.sectiontype);
+		    section_id = this.map.data.add(config_name, this.sectiontype, name);
 
-	    this.addedSection = section_id;
-		this.renderMoreOptionsModal(section_id);
+		this.addedSection = section_id;
+		return this.renderMoreOptionsModal(section_id);
 	},
 
 	handleModalSave: function(/* ... */) {
@@ -1160,7 +1407,7 @@ var CBIGridSection = CBITableSection.extend({
 		var config_name = this.uciconfig || this.map.config;
 
 		if (this.addedSection != null) {
-			uci.remove(config_name, this.addedSection);
+			this.map.data.remove(config_name, this.addedSection);
 			this.addedSection = null;
 		}
 
@@ -1194,7 +1441,7 @@ var CBIGridSection = CBITableSection.extend({
 
 		return E('div', {
 			'class': 'td cbi-value-field',
-			'data-title': (title != '') ? title : opt.option,
+			'data-title': (title != '') ? title : null,
 			'data-description': (descr != '') ? descr : null,
 			'data-name': opt.option,
 			'data-type': opt.typename || opt.__name__
@@ -1240,16 +1487,16 @@ var CBINamedSection = CBIAbstractSection.extend({
 		var section_id = this.section,
 		    config_name = this.uciconfig || this.map.config;
 
-		uci.add(config_name, this.sectiontype, section_id);
-		this.map.save();
+		this.map.data.add(config_name, this.sectiontype, section_id);
+		return this.map.save(null, true);
 	},
 
 	handleRemove: function(ev) {
 		var section_id = this.section,
 		    config_name = this.uciconfig || this.map.config;
 
-		uci.remove(config_name, section_id);
-		this.map.save();
+		this.map.data.remove(config_name, section_id);
+		return this.map.save(null, true);
 	},
 
 	renderContents: function(data) {
@@ -1258,7 +1505,9 @@ var CBINamedSection = CBIAbstractSection.extend({
 		    config_name = this.uciconfig || this.map.config,
 		    sectionEl = E('div', {
 				'id': ucidata ? null : 'cbi-%s-%s'.format(config_name, section_id),
-				'class': 'cbi-section'
+				'class': 'cbi-section',
+				'data-tab': (this.map.tabbed && !this.parentoption) ? this.sectiontype : null,
+				'data-tab-title': (this.map.tabbed && !this.parentoption) ? this.title || this.sectiontype : null
 			});
 
 		if (typeof(this.title) === 'string' && this.title !== '')
@@ -1271,31 +1520,25 @@ var CBINamedSection = CBIAbstractSection.extend({
 			if (this.addremove) {
 				sectionEl.appendChild(
 					E('div', { 'class': 'cbi-section-remove right' },
-						E('input', {
-							'type': 'submit',
+						E('button', {
 							'class': 'cbi-button',
-							'value': _('Delete'),
-							'click': L.bind(this.handleRemove, this)
-						})));
+							'click': L.ui.createHandlerFn(this, 'handleRemove')
+						}, [ _('Delete') ])));
 			}
 
 			sectionEl.appendChild(E('div', {
 				'id': 'cbi-%s-%s'.format(config_name, section_id),
 				'class': this.tabs
-					? 'cbi-section-node cbi-section-node-tabbed' : 'cbi-section-node'
+					? 'cbi-section-node cbi-section-node-tabbed' : 'cbi-section-node',
+				'data-section-id': section_id
 			}, nodes));
-
-			if (this.tabs)
-				ui.tabs.initTabGroup(sectionEl.lastChild.childNodes);
 		}
 		else if (this.addremove) {
 			sectionEl.appendChild(
-				E('input', {
-					'type': 'submit',
+				E('button', {
 					'class': 'cbi-button cbi-button-add',
-					'value': _('Add'),
-					'click': L.bind(this.handleAdd, this)
-				}));
+					'click': L.ui.createHandlerFn(this, 'handleAdd')
+				}, [ _('Add') ]));
 		}
 
 		L.dom.bindClassInstance(sectionEl, this);
@@ -1308,7 +1551,7 @@ var CBINamedSection = CBIAbstractSection.extend({
 		    section_id = this.section;
 
 		return Promise.all([
-			uci.get(config_name, section_id),
+			this.map.data.get(config_name, section_id),
 			this.renderUCISection(section_id)
 		]).then(this.renderContents.bind(this));
 	}
@@ -1332,14 +1575,15 @@ var CBIValue = CBIAbstractValue.extend({
 	},
 
 	renderFrame: function(section_id, in_table, option_index, nodes) {
-		var config_name = this.uciconfig || this.map.config,
+		var config_name = this.uciconfig || this.section.uciconfig || this.map.config,
 		    depend_list = this.transformDepList(section_id),
 		    optionEl;
 
 		if (in_table) {
+			var title = this.stripTags(this.title).trim();
 			optionEl = E('div', {
 				'class': 'td cbi-value-field',
-				'data-title': this.stripTags(this.title).trim(),
+				'data-title': (title != '') ? title : null,
 				'data-description': this.stripTags(this.description).trim(),
 				'data-name': this.option,
 				'data-type': this.typename || (this.template ? this.template.replace(/^.+\//, '') : null) || this.__name__
@@ -1558,6 +1802,29 @@ var CBIMultiValue = CBIDynamicList.extend({
 	},
 });
 
+var CBITextValue = CBIValue.extend({
+	__name__: 'CBI.TextValue',
+
+	value: null,
+
+	renderWidget: function(section_id, option_index, cfgvalue) {
+		var value = (cfgvalue != null) ? cfgvalue : this.default;
+
+		var widget = new ui.Textarea(value, {
+			id: this.cbid(section_id),
+			optional: this.optional || this.rmempty,
+			placeholder: this.placeholder,
+			monospace: this.monospace,
+			cols: this.cols,
+			rows: this.rows,
+			wrap: this.wrap,
+			validate: L.bind(this.validate, this, section_id)
+		});
+
+		return widget.render();
+	}
+});
+
 var CBIDummyValue = CBIValue.extend({
 	__name__: 'CBI.DummyValue',
 
@@ -1577,34 +1844,37 @@ var CBIDummyValue = CBIValue.extend({
 			hiddenEl.render()
 		]);
 	},
+
+	remove: function() {},
+	write: function() {}
 });
 
 var CBIButtonValue = CBIValue.extend({
 	__name__: 'CBI.ButtonValue',
 
 	renderWidget: function(section_id, option_index, cfgvalue) {
-		var value = (cfgvalue != null) ? cfgvalue : this.default;
+		var value = (cfgvalue != null) ? cfgvalue : this.default,
+		    hiddenEl = new ui.Hiddenfield(value, { id: this.cbid(section_id) }),
+		    outputEl = E('div'),
+		    btn_title = this.titleFn('inputtitle', section_id) || this.titleFn('title', section_id);
 
 		if (value !== false)
-			return E([
-				E('input', {
-					'type': 'hidden',
-					'id': this.cbid(section_id)
-				}),
-				E('input', {
+			L.dom.content(outputEl, [
+				E('button', {
 					'class': 'cbi-button cbi-button-%s'.format(this.inputstyle || 'button'),
-					'type': 'submit',
-					//'id': this.cbid(section_id),
-					//'name': this.cbid(section_id),
-					'value': this.inputtitle || this.title,
-					'click': L.bind(function(ev) {
-						ev.target.previousElementSibling.value = ev.target.value;
-						this.map.save();
-					}, this)
-				})
+					'click': L.ui.createHandlerFn(this, this.onclick || function(ev) {
+						ev.currentTarget.parentNode.nextElementSibling.value = value;
+						return this.map.save();
+					})
+				}, [ btn_title ])
 			]);
 		else
-			return document.createTextNode(' - ');
+			L.dom.content(outputEl, ' - ');
+
+		return E([
+			outputEl,
+			hiddenEl.render()
+		]);
 	}
 });
 
@@ -1620,6 +1890,32 @@ var CBIHiddenValue = CBIValue.extend({
 	}
 });
 
+var CBIFileUpload = CBIValue.extend({
+	__name__: 'CBI.FileSelect',
+
+	__init__: function(/* ... */) {
+		this.super('__init__', arguments);
+
+		this.show_hidden = false;
+		this.enable_upload = true;
+		this.enable_remove = true;
+		this.root_directory = '/etc/luci-uploads';
+	},
+
+	renderWidget: function(section_id, option_index, cfgvalue) {
+		var browserEl = new ui.FileUpload((cfgvalue != null) ? cfgvalue : this.default, {
+			id: this.cbid(section_id),
+			name: this.cbid(section_id),
+			show_hidden: this.show_hidden,
+			enable_upload: this.enable_upload,
+			enable_remove: this.enable_remove,
+			root_directory: this.root_directory
+		});
+
+		return browserEl.render();
+	}
+});
+
 var CBISectionValue = CBIValue.extend({
 	__name__: 'CBI.ContainerValue',
 	__init__: function(map, section, option, cbiClass /*, ... */) {
@@ -1629,6 +1925,7 @@ var CBISectionValue = CBIValue.extend({
 			throw 'Sub section must be a descendent of CBIAbstractSection';
 
 		this.subsection = cbiClass.instantiate(this.varargs(arguments, 4, this.map));
+		this.subsection.parentoption = this;
 	},
 
 	load: function(section_id) {
@@ -1645,7 +1942,7 @@ var CBISectionValue = CBIValue.extend({
 
 	checkDepends: function(section_id) {
 		this.subsection.checkDepends();
-		return this.super('checkDepends');
+		return CBIValue.prototype.checkDepends.apply(this, [ section_id ]);
 	},
 
 	write: function() {},
@@ -1656,6 +1953,7 @@ var CBISectionValue = CBIValue.extend({
 
 return L.Class.extend({
 	Map: CBIMap,
+	JSONMap: CBIJSONMap,
 	AbstractSection: CBIAbstractSection,
 	AbstractValue: CBIAbstractValue,
 
@@ -1669,8 +1967,10 @@ return L.Class.extend({
 	ListValue: CBIListValue,
 	Flag: CBIFlagValue,
 	MultiValue: CBIMultiValue,
+	TextValue: CBITextValue,
 	DummyValue: CBIDummyValue,
 	Button: CBIButtonValue,
 	HiddenValue: CBIHiddenValue,
+	FileUpload: CBIFileUpload,
 	SectionValue: CBISectionValue
 });

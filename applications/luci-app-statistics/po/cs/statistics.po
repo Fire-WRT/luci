@@ -1,15 +1,16 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
-"PO-Revision-Date: 2014-06-21 17:44+0200\n"
-"Last-Translator: koli <lukas.koluch@gmail.com>\n"
-"Language-Team: none\n"
+"PO-Revision-Date: 2019-10-16 21:07+0000\n"
+"Last-Translator: Josef Schlehofer <pepe@bloodkings.eu>\n"
+"Language-Team: Czech <https://hosted.weblate.org/projects/openwrt/"
+"luciapplicationsstatistics/cs/>\n"
 "Language: cs\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=(n==1) ? 0 : (n>=2 && n<=4) ? 1 : 2;\n"
-"X-Generator: Pootle 2.0.6\n"
+"X-Generator: Weblate 3.9\n"
 
 #: applications/luci-app-statistics/luasrc/statistics/plugins/apcups.lua:7
 #: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/apcups.lua:7
@@ -18,6 +19,10 @@ msgstr ""
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/apcups.lua:5
 msgid "APCUPS Plugin Configuration"
+msgstr ""
+
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/memory.lua:15
+msgid "Absolute values"
 msgstr ""
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/iptables.lua:70
@@ -57,18 +62,22 @@ msgstr "Základní adresář"
 msgid "Basic monitoring"
 msgstr "Základní sledování"
 
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpu.lua:18
+msgid "By setting this, CPU is not aggregate of all processors on the system"
+msgstr ""
+
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/contextswitch.lua:4
 msgid "CPU Context Switches Plugin Configuration"
 msgstr ""
 
 #: applications/luci-app-statistics/luasrc/statistics/plugins/cpufreq.lua:7
-#: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/cpufreq.lua:6
+#: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/cpufreq.lua:9
 msgid "CPU Frequency"
-msgstr ""
+msgstr "Frekvence CPU"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpufreq.lua:4
 msgid "CPU Frequency Plugin Configuration"
-msgstr ""
+msgstr "Konfigurace pluginu pro frekvenci CPU"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpu.lua:5
 msgid "CPU Plugin Configuration"
@@ -195,7 +204,7 @@ msgstr "Nastavení E-Mail pluginu"
 
 #: applications/luci-app-statistics/luasrc/statistics/plugins/email.lua:7
 msgid "Email"
-msgstr "Email"
+msgstr "E-mail"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/thermal.lua:19
 msgid "Empty value = monitor all"
@@ -208,8 +217,8 @@ msgstr ""
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/apcups.lua:14
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/conntrack.lua:10
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/contextswitch.lua:11
-#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpu.lua:12
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpufreq.lua:11
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpu.lua:12
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/csv.lua:15
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/curl.lua:8
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/df.lua:15
@@ -258,6 +267,10 @@ msgstr "Exec"
 msgid "Exec Plugin Configuration"
 msgstr "Nastavení pluginu Exec"
 
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpufreq.lua:15
+msgid "Extra items"
+msgstr ""
+
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/netlink.lua:68
 msgid "Filter class monitoring"
 msgstr ""
@@ -281,7 +294,7 @@ msgstr ""
 
 #: applications/luci-app-statistics/luasrc/controller/luci_statistics/luci_statistics.lua:23
 msgid "General plugins"
-msgstr ""
+msgstr "Obecné pluginy"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/openvpn.lua:17
 msgid "Generate a separate graph for each logged user"
@@ -330,11 +343,11 @@ msgstr "Hostitel"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/collectd.lua:19
 msgid "Hostname"
-msgstr "Hostname"
+msgstr "Název počítače"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/olsrd.lua:13
 msgid "IP or hostname where to get the txtinfo output from"
-msgstr "IP nebo hostname, odkud získat txtinfo výstup"
+msgstr "IP nebo hostname, odkud získá výstup z txtinfo"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/irq.lua:5
 msgid "IRQ Plugin Configuration"
@@ -402,7 +415,7 @@ msgid "Maximum allowed connections"
 msgstr "Maximální množství povolených spojení"
 
 #: applications/luci-app-statistics/luasrc/statistics/plugins/memory.lua:7
-#: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/memory.lua:15
+#: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/memory.lua:7
 msgid "Memory"
 msgstr "Paměť"
 
@@ -479,6 +492,10 @@ msgstr "Sledovat procesy"
 msgid "Monitor remote ports"
 msgstr "Sledovat vzdálené porty"
 
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpufreq.lua:15
+msgid "More details about frequency usage and transitions"
+msgstr ""
+
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/curl.lua:20
 msgid "Name"
 msgstr ""
@@ -542,7 +559,7 @@ msgstr ""
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/openvpn.lua:7
 msgid "OpenVPN Plugin Configuration"
-msgstr ""
+msgstr "Nastavení OpenVPN pluginu"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/openvpn.lua:41
 msgid "OpenVPN status files"
@@ -560,6 +577,10 @@ msgstr "Odchozí rozhraní"
 msgid "Output plugins"
 msgstr "Výstupní pluginy"
 
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/memory.lua:23
+msgid "Percent values"
+msgstr ""
+
 #: applications/luci-app-statistics/luasrc/statistics/plugins/ping.lua:7
 #: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/ping.lua:7
 msgid "Ping"
@@ -575,7 +596,7 @@ msgstr "Port"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/apcups.lua:23
 msgid "Port for apcupsd communication"
-msgstr ""
+msgstr "Port pro komunikaci apcupsd"
 
 #: applications/luci-app-statistics/luasrc/statistics/plugins/processes.lua:7
 #: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/processes.lua:7
@@ -591,7 +612,7 @@ msgid "Processes to monitor separated by space"
 msgstr "Sledované procesy (oddělte mezerou)"
 
 #: applications/luci-app-statistics/luasrc/statistics/plugins/cpu.lua:7
-#: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/cpu.lua:7
+#: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/cpu.lua:10
 msgid "Processor"
 msgstr "Procesor"
 
@@ -620,6 +641,18 @@ msgstr "RRDTool"
 msgid "RRDTool Plugin Configuration"
 msgstr "Nastavení pluginu RRDTool"
 
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpu.lua:17
+msgid "Report by CPU"
+msgstr ""
+
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpu.lua:24
+msgid "Report by state"
+msgstr ""
+
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpu.lua:31
+msgid "Report in percent"
+msgstr ""
+
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/rrdtool.lua:74
 msgid "Rows per RRA"
 msgstr "Řádky na jeden RRA"
@@ -646,11 +679,11 @@ msgstr ""
 #: applications/luci-app-statistics/luasrc/statistics/plugins/sensors.lua:7
 #: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/sensors.lua:7
 msgid "Sensors"
-msgstr ""
+msgstr "Sensory"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/sensors.lua:64
 msgid "Sensors Plugin Configuration"
-msgstr ""
+msgstr "Nastavení pluginu pro sensory"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/network.lua:54
 msgid "Server host"
@@ -662,7 +695,7 @@ msgstr "Port serveru"
 
 #: applications/luci-app-statistics/luasrc/controller/luci_statistics/luci_statistics.lua:48
 msgid "Setup"
-msgstr ""
+msgstr "Nastavení"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/netlink.lua:57
 msgid "Shaping class monitoring"
@@ -826,7 +859,7 @@ msgid ""
 "to be used in conjunction with Mail::SpamAssasin::Plugin::Collectd but can "
 "be used in other ways as well."
 msgstr ""
-"Plugin Email vytváří unixový socket, které může být využit pro odeslání "
+"Plugin E-mail vytváří unixový socket, které může být využit pro odeslání "
 "statistik o emailu běžícímu daemonu collectd. Plugin je primárně určen pro "
 "použití ve spojení s Mail::SpamAssasin::Plugin::Collectd, ale stejně dobře "
 "může být využit jinak."
@@ -976,11 +1009,11 @@ msgstr ""
 #: applications/luci-app-statistics/luasrc/statistics/plugins/thermal.lua:7
 #: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/thermal.lua:6
 msgid "Thermal"
-msgstr ""
+msgstr "Teploty"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/thermal.lua:4
 msgid "Thermal Plugin Configuration"
-msgstr ""
+msgstr "Nastavení pluginu pro teploty"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/contextswitch.lua:5
 msgid "This plugin collects statistics about the processor context switches."
@@ -1040,7 +1073,7 @@ msgstr ""
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/uptime.lua:5
 msgid "Uptime Plugin Configuration"
-msgstr ""
+msgstr "Nastavení pluginu Uptime"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/openvpn.lua:35
 msgid "Use improved naming schema"
@@ -1058,6 +1091,19 @@ msgstr "Uživatel"
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/netlink.lua:35
 msgid "Verbose monitoring"
 msgstr "Podrobný monitoring"
+
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpu.lua:25
+msgid "When set to true, reports per-state metric (system, user, idle)"
+msgstr ""
+
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/memory.lua:16
+msgid "When set to true, we request absolute values"
+msgstr ""
+
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/cpu.lua:32
+#: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/memory.lua:24
+msgid "When set to true, we request percentage values"
+msgstr ""
 
 #: applications/luci-app-statistics/luasrc/statistics/plugins/iwinfo.lua:7
 #: applications/luci-app-statistics/luasrc/statistics/rrdtool/definitions/iwinfo.lua:7
@@ -1104,7 +1150,7 @@ msgstr "redukovaná velikost rrd"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/rrdtool.lua:67
 msgid "seconds; multiple separated by space"
-msgstr "sekundy, více hodnot oddělených mezerou"
+msgstr "sekundy, více hodnot oddělte pomocí mezery"
 
 #: applications/luci-app-statistics/luasrc/model/cbi/luci_statistics/network.lua:45
 msgid "server interfaces"

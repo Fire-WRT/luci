@@ -9,7 +9,7 @@ local function readfile(path)
 end
 
 local methods = {
-	initList = {
+	getInitList = {
 		args = { name = "name" },
 		call = function(args)
 			local sys = require "luci.sys"
@@ -22,11 +22,11 @@ local methods = {
 					return { error = "No such init script" }
 				end
 			end
-			return { result = scripts }
+			return scripts
 		end
 	},
 
-	initCall = {
+	setInitAction = {
 		args = { name = "name", action = "action" },
 		call = function(args)
 			local sys = require "luci.sys"
@@ -39,7 +39,7 @@ local methods = {
 
 	getLocaltime = {
 		call = function(args)
-			return { localtime = os.time() }
+			return { result = os.time() }
 		end
 	},
 
@@ -52,11 +52,11 @@ local methods = {
 				sys.call("date -s '%04d-%02d-%02d %02d:%02d:%02d' >/dev/null" %{ date.year, date.month, date.day, date.hour, date.min, date.sec })
 				sys.call("/etc/init.d/sysfixtime restart >/dev/null")
 			end
-			return { localtime = args.localtime }
+			return { result = args.localtime }
 		end
 	},
 
-	timezone = {
+	getTimezones = {
 		call = function(args)
 			local util  = require "luci.util"
 			local zones = require "luci.sys.zoneinfo"
@@ -76,11 +76,11 @@ local methods = {
 					active = (res and res.value == zone[1]) and true or nil
 				}
 			end
-			return { result = result }
+			return result
 		end
 	},
 
-	leds = {
+	getLEDs = {
 		call = function()
 			local iter   = fs.dir("/sys/class/leds")
 			local result = { }
@@ -115,7 +115,7 @@ local methods = {
 		end
 	},
 
-	usb = {
+	getUSBDevices = {
 		call = function()
 			local fs     = require "nixio.fs"
 			local iter   = fs.glob("/sys/bus/usb/devices/[0-9]*/manufacturer")
@@ -126,7 +126,7 @@ local methods = {
 
 				local p
 				for p in iter do
-					local id = p:match("%d+-%d+")
+					local id = p:match("/([^/]+)/manufacturer$")
 
 					result.devices[#result.devices+1] = {
 						id      = id,
@@ -139,18 +139,19 @@ local methods = {
 				end
 			end
 
-			iter = fs.glob("/sys/bus/usb/devices/*/usb[0-9]*-port[0-9]*")
+			iter = fs.glob("/sys/bus/usb/devices/*/*-port[0-9]*")
 
 			if iter then
 				result.ports = {}
 
 				local p
 				for p in iter do
-					local bus, port = p:match("usb(%d+)-port(%d+)")
+					local port = p:match("([^/]+)$")
+					local link = fs.readlink(p.."/device")
 
 					result.ports[#result.ports+1] = {
-						hub  = tonumber(bus),
-						port = tonumber(port)
+						port   = port,
+						device = link and fs.basename(link)
 					}
 				end
 			end
@@ -159,166 +160,418 @@ local methods = {
 		end
 	},
 
-	ifaddrs = {
+	getConntrackHelpers = {
 		call = function()
-			return { result = nixio.getifaddrs() }
+			local ok, fd = pcall(io.open, "/usr/share/fw3/helpers.conf", "r")
+			local rv = {}
+
+			if ok then
+				local entry
+
+				while true do
+					local line = fd:read("*l")
+					if not line then
+						break
+					end
+
+					if line:match("^%s*config%s") then
+						if entry then
+							rv[#rv+1] = entry
+						end
+						entry = {}
+					else
+						local opt, val = line:match("^%s*option%s+(%S+)%s+(%S.*)$")
+						if opt and val then
+							opt = opt:gsub("^'(.+)'$", "%1"):gsub('^"(.+)"$', "%1")
+							val = val:gsub("^'(.+)'$", "%1"):gsub('^"(.+)"$', "%1")
+							entry[opt] = val
+						end
+					end
+				end
+
+				if entry then
+					rv[#rv+1] = entry
+				end
+
+				fd:close()
+			end
+
+			return { result = rv }
 		end
 	},
 
-	host_hints = {
+	getFeatures = {
 		call = function()
-			local sys = require "luci.sys"
-			return sys.net.host_hints()
+			local fs = require "nixio.fs"
+			local rv = {}
+			local ok, fd
+
+			rv.firewall      = fs.access("/sbin/fw3")
+			rv.opkg          = fs.access("/bin/opkg")
+			rv.offloading    = fs.access("/sys/module/xt_FLOWOFFLOAD/refcnt")
+			rv.br2684ctl     = fs.access("/usr/sbin/br2684ctl")
+			rv.swconfig      = fs.access("/sbin/swconfig")
+			rv.odhcpd        = fs.access("/usr/sbin/odhcpd")
+			rv.zram          = fs.access("/sys/class/zram-control")
+			rv.sysntpd       = fs.readlink("/usr/sbin/ntpd") and true
+			rv.ipv6          = fs.access("/proc/net/ipv6_route")
+			rv.dropbear      = fs.access("/usr/sbin/dropbear")
+
+			local wifi_features = { "eap", "11n", "11ac", "11r", "11w", "acs", "sae", "owe", "suiteb192" }
+
+			if fs.access("/usr/sbin/hostapd") then
+				rv.hostapd = { cli = fs.access("/usr/sbin/hostapd_cli") }
+
+				local _, feature
+				for _, feature in ipairs(wifi_features) do
+					rv.hostapd[feature] =
+						(os.execute(string.format("/usr/sbin/hostapd -v%s >/dev/null 2>/dev/null", feature)) == 0)
+				end
+			end
+
+			if fs.access("/usr/sbin/wpa_supplicant") then
+				rv.wpasupplicant = { cli = fs.access("/usr/sbin/wpa_cli") }
+
+				local _, feature
+				for _, feature in ipairs(wifi_features) do
+					rv.wpasupplicant[feature] =
+						(os.execute(string.format("/usr/sbin/wpa_supplicant -v%s >/dev/null 2>/dev/null", feature)) == 0)
+				end
+			end
+
+			ok, fd = pcall(io.popen, "dnsmasq --version 2>/dev/null")
+			if ok then
+				rv.dnsmasq = {}
+
+				while true do
+					local line = fd:read("*l")
+					if not line then
+						break
+					end
+
+					local opts = line:match("^Compile time options: (.+)$")
+					if opts then
+						local opt
+						for opt in opts:gmatch("%S+") do
+							local no = opt:match("^no%-(%S+)$")
+							rv.dnsmasq[string.lower(no or opt)] = not no
+						end
+						break
+					end
+				end
+
+				fd:close()
+			end
+
+			ok, fd = pcall(io.popen, "ipset --help 2>/dev/null")
+			if ok then
+				rv.ipset = {}
+
+				local sets = false
+
+				while true do
+					local line = fd:read("*l")
+					if not line then
+						break
+					elseif line:match("^Supported set types:") then
+						sets = true
+					elseif sets then
+						local set, ver = line:match("^%s+(%S+)%s+(%d+)")
+						if set and not rv.ipset[set] then
+							rv.ipset[set] = tonumber(ver)
+						end
+					end
+				end
+
+				fd:close()
+			end
+
+			return rv
 		end
 	},
 
-	duid_hints = {
-		call = function()
-			local fp = io.open('/var/hosts/odhcpd')
-			local result = { }
-			if fp then
-				for line in fp:lines() do
-					local dev, duid, name = string.match(line, '# (%S+)%s+(%S+)%s+%d+%s+(%S+)')
-					if dev and duid and name then
-						result[duid] = {
-							name = (name ~= "-") and name or nil,
-							device = dev
+	getSwconfigFeatures = {
+		args = { switch = "switch0" },
+		call = function(args)
+			local util = require "luci.util"
+
+			-- Parse some common switch properties from swconfig help output.
+			local swc, err = io.popen("swconfig dev %s help 2>/dev/null" % util.shellquote(args.switch))
+			if swc then
+				local is_port_attr = false
+				local is_vlan_attr = false
+				local rv = {}
+
+				while true do
+					local line = swc:read("*l")
+					if not line then break end
+
+					if line:match("^%s+%-%-vlan") then
+						is_vlan_attr = true
+
+					elseif line:match("^%s+%-%-port") then
+						is_vlan_attr = false
+						is_port_attr = true
+
+					elseif line:match("cpu @") then
+						rv.switch_title = line:match("^switch%d: %w+%((.-)%)")
+						rv.num_vlans    = tonumber(line:match("vlans: (%d+)")) or 16
+						rv.min_vid      = 1
+
+					elseif line:match(": pvid") or line:match(": tag") or line:match(": vid") then
+						if is_vlan_attr then rv.vid_option = line:match(": (%w+)") end
+
+					elseif line:match(": enable_vlan4k") then
+						rv.vlan4k_option = "enable_vlan4k"
+
+					elseif line:match(": enable_vlan") then
+						rv.vlan_option = "enable_vlan"
+
+					elseif line:match(": enable_learning") then
+						rv.learning_option = "enable_learning"
+
+					elseif line:match(": enable_mirror_rx") then
+						rv.mirror_option = "enable_mirror_rx"
+
+					elseif line:match(": max_length") then
+						rv.jumbo_option = "max_length"
+					end
+				end
+
+				swc:close()
+
+				if not next(rv) then
+					return { error = "No such switch" }
+				end
+
+				return rv
+			else
+				return { error = err }
+			end
+		end
+	},
+
+	getSwconfigPortState = {
+		args = { switch = "switch0" },
+		call = function(args)
+			local util = require "luci.util"
+
+			local swc, err = io.popen("swconfig dev %s show 2>/dev/null" % util.shellquote(args.switch))
+			if swc then
+				local ports = { }
+
+				while true do
+					local line = swc:read("*l")
+					if not line then break end
+
+					local port, up = line:match("port:(%d+) link:(%w+)")
+					if port then
+						local speed  = line:match(" speed:(%d+)")
+						local duplex = line:match(" (%w+)-duplex")
+						local txflow = line:match(" (txflow)")
+						local rxflow = line:match(" (rxflow)")
+						local auto   = line:match(" (auto)")
+
+						ports[#ports+1] = {
+							port   = tonumber(port) or 0,
+							speed  = tonumber(speed) or 0,
+							link   = (up == "up"),
+							duplex = (duplex == "full"),
+							rxflow = (not not rxflow),
+							txflow = (not not txflow),
+							auto   = (not not auto)
 						}
 					end
 				end
-				fp:close()
-			end
-			return result
-		end
-	},
 
-	leases = {
-		args = { family = 0 },
-		call = function(args)
-			local s = require "luci.tools.status"
+				swc:close()
 
-			if args.family == 4 then
-				return { dhcp_leases = s.dhcp_leases() }
-			elseif args.family == 6 then
-				return { dhcp6_leases = s.dhcp6_leases() }
-			else
-				return {
-					dhcp_leases = s.dhcp_leases(),
-					dhcp6_leases = s.dhcp6_leases()
-				}
-			end
-		end
-	},
-
-	netdevs = {
-		call = function(args)
-			local dir = fs.dir("/sys/class/net")
-			local result = { }
-			if dir then
-				local dev
-				for dev in dir do
-					if not result[dev] then
-						result[dev] = { name = dev }
-					end
-
-					if fs.access("/sys/class/net/"..dev.."/master") then
-						local brname = fs.basename(fs.readlink("/sys/class/net/"..dev.."/master"))
-						if not result[brname] then
-							result[brname] = { name = brname }
-						end
-
-						if not result[brname].ports then
-							result[brname].ports = { }
-						end
-
-						result[brname].ports[#result[brname].ports+1] = dev
-					elseif fs.access("/sys/class/net/"..dev.."/bridge") then
-						if not result[dev].ports then
-							result[dev].ports = { }
-						end
-
-						result[dev].id = readfile("/sys/class/net/"..dev.."/bridge/bridge_id")
-						result[dev].stp = (readfile("/sys/class/net/"..dev.."/bridge/stp_state") ~= "0")
-						result[dev].bridge = true
-					end
-
-					local opr = readfile("/sys/class/net/"..dev.."/operstate")
-
-					result[dev].up = (opr == "up" or opr == "unknown")
-					result[dev].type = tonumber(readfile("/sys/class/net/"..dev.."/type"))
-					result[dev].name = dev
-
-					local mtu = tonumber(readfile("/sys/class/net/"..dev.."/mtu"))
-					if mtu and mtu > 0 then
-						result[dev].mtu = mtu
-					end
-
-					local qlen = tonumber(readfile("/sys/class/net/"..dev.."/tx_queue_len"))
-					if qlen and qlen > 0 then
-						result[dev].qlen = qlen
-					end
-
-					local master = fs.readlink("/sys/class/net/"..dev.."/master")
-					if master then
-						result[dev].master = fs.basename(master)
-					end
-
-					local mac = readfile("/sys/class/net/"..dev.."/address")
-					if mac and #mac == 17 then
-						result[dev].mac = mac
-					end
+				if not next(ports) then
+					return { error = "No such switch" }
 				end
+
+				return { result = ports }
+			else
+				return { error = err }
 			end
-			return result
 		end
 	},
 
-	boardjson = {
+	setPassword = {
+		args = { username = "root", password = "password" },
 		call = function(args)
-			local jsc = require "luci.jsonc"
-			return jsc.parse(fs.readfile("/etc/board.json") or "")
+			local util = require "luci.util"
+			return {
+				result = (os.execute("(echo %s; sleep 1; echo %s) | passwd %s >/dev/null 2>&1" %{
+					luci.util.shellquote(args.password),
+					luci.util.shellquote(args.password),
+					luci.util.shellquote(args.username)
+				}) == 0)
+			}
 		end
 	},
 
-	offload_support = {
+	getBlockDevices = {
 		call = function()
 			local fs = require "nixio.fs"
-			return { offload_support = not not fs.access("/sys/module/xt_FLOWOFFLOAD/refcnt") }
+
+			local block = io.popen("/sbin/block info", "r")
+			if block then
+				local rv = {}
+
+				while true do
+					local ln = block:read("*l")
+					if not ln then
+						break
+					end
+
+					local dev = ln:match("^/dev/(.-):")
+					if dev then
+						local s = tonumber((fs.readfile("/sys/class/block/" .. dev .."/size")))
+						local e = {
+							dev = "/dev/" .. dev,
+							size = s and s * 512
+						}
+
+						local key, val = { }
+						for key, val in ln:gmatch([[(%w+)="(.-)"]]) do
+							e[key:lower()] = val
+						end
+
+						rv[dev] = e
+					end
+				end
+
+				block:close()
+
+				return rv
+			else
+				return { error = "Unable to execute block utility" }
+			end
 		end
 	},
 
-	conntrack_helpers = {
+	setBlockDetect = {
 		call = function()
-			local fd = io.open("/usr/share/fw3/helpers.conf", "r")
-			local rv = {}
+			return { result = (os.execute("/sbin/block detect > /etc/config/fstab") == 0) }
+		end
+	},
 
-			local line, entry
-			while true do
-				line = fd:read("*l")
-				if not line then
-					break
+	getMountPoints = {
+		call = function()
+			local fs = require "nixio.fs"
+
+			local fd, err = io.open("/proc/mounts", "r")
+			if fd then
+				local rv = {}
+
+				while true do
+					local ln = fd:read("*l")
+					if not ln then
+						break
+					end
+
+					local device, mount, fstype, options, freq, pass = ln:match("^(%S*) (%S*) (%S*) (%S*) (%d+) (%d+)$")
+					if device and mount then
+						device = device:gsub("\\(%d+)", function(n) return string.char(tonumber(n, 8)) end)
+						mount = mount:gsub("\\(%d+)", function(n) return string.char(tonumber(n, 8)) end)
+
+						local stat = fs.statvfs(mount)
+						if stat and stat.blocks > 0 then
+							rv[#rv+1] = {
+								device = device,
+								mount  = mount,
+								size   = stat.bsize * stat.blocks,
+								avail  = stat.bsize * stat.bavail,
+								free   = stat.bsize * stat.bfree
+							}
+						end
+					end
 				end
 
-				if line:match("^%s*config%s") then
-					if entry then
-						rv[#rv+1] = entry
+				fd:close()
+
+				return { result = rv }
+			else
+				return { error = err }
+			end
+		end
+	},
+
+	getRealtimeStats = {
+		args = { mode = "interface", device = "eth0" },
+		call = function(args)
+			local util = require "luci.util"
+
+			local flags
+			if args.mode == "interface" then
+				flags = "-i %s" % util.shellquote(args.device)
+			elseif args.mode == "wireless" then
+				flags = "-r %s" % util.shellquote(args.device)
+			elseif args.mode == "conntrack" then
+				flags = "-c"
+			elseif args.mode == "load" then
+				flags = "-l"
+			else
+				return { error = "Invalid mode" }
+			end
+
+			local fd, err = io.popen("luci-bwc %s" % flags, "r")
+			if fd then
+				local parse = json.new()
+				local done
+
+				parse:parse("[")
+
+				while true do
+					local ln = fd:read("*l")
+					if not ln then
+						break
 					end
-					entry = {}
+
+					done, err = parse:parse((ln:gsub("%d+", "%1.0")))
+
+					if done then
+						err = "Unexpected JSON data"
+					end
+
+					if err then
+						break
+					end
+				end
+
+				fd:close()
+
+				done, err = parse:parse("]")
+
+				if err then
+					return { error = err }
+				elseif not done then
+					return { error = "Incomplete JSON data" }
 				else
-					local opt, val = line:match("^%s*option%s+(%S+)%s+(%S.*)$")
-					if opt and val then
-						opt = opt:gsub("^'(.+)'$", "%1"):gsub('^"(.+)"$', "%1")
-						val = val:gsub("^'(.+)'$", "%1"):gsub('^"(.+)"$', "%1")
-						entry[opt] = val
-					end
+					return { result = parse:get() }
 				end
+			else
+				return { error = err }
 			end
+		end
+	},
 
-			if entry then
-				rv[#rv+1] = entry
+	getConntrackList = {
+		call = function()
+			local sys = require "luci.sys"
+			return { result = sys.net.conntrack() }
+		end
+	},
+
+	getProcessList = {
+		call = function()
+			local sys = require "luci.sys"
+			local res = {}
+			for _, v in pairs(sys.process.list()) do
+				res[#res + 1] = v
 			end
-
-			return { helpers = rv }
+			return { result = res }
 		end
 	}
 }
